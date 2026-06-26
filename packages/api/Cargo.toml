@@ -5,6 +5,40 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+
+# server-only — enabled by the "server" feature
+sqlx = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+axum-extra = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+jsonwebtoken = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+dotenvy = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 
 [features]
-server = ["dioxus/server"]
+default = []
+server = [
+    "dioxus/server",
+    "dep:sqlx",
+    "dep:tokio",
+    "dep:axum",
+    "dep:axum-extra",
+    "dep:tower-http",
+    "dep:jsonwebtoken",
+    "dep:clap",
+    "dep:dotenvy",
+    "dep:env_logger",
+    "dep:log",
+    "dep:rand",
+    "dep:futures-util",
+]

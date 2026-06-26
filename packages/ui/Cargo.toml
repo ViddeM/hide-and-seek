@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true }
+dioxus = { workspace = true, features = ["router"] }
 api = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
 
 [features]
+default = []
 server = ["api/server"]

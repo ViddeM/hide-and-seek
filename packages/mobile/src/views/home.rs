@@ -1,10 +1,11 @@
 use dioxus::prelude::*;
-use ui::{Echo, Hero};
 
 #[component]
 pub fn Home() -> Element {
     rsx! {
-        Hero {}
-        Echo {}
+        main {
+            h1 { "Hide & Seek" }
+            p { "Open the web app to play." }
+        }
     }
 }

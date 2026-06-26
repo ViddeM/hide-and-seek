@@ -1,8 +1,21 @@
-//! This crate contains all shared fullstack server functions.
-use dioxus::prelude::*;
+pub mod config;
+pub mod db;
+pub mod error;
+pub mod models;
 
-/// Echo the user input on the server.
-#[post("/api/echo")]
-pub async fn echo(input: String) -> Result<String, ServerFnError> {
-    Ok(input)
-}
+// Server-function modules — bodies are server-only, but types are shared
+pub mod auth;
+pub mod cards;
+pub mod game;
+pub mod maps;
+pub mod zones;
+
+// Server-only modules
+#[cfg(feature = "server")]
+pub mod jwt;
+#[cfg(feature = "server")]
+pub mod middleware;
+pub mod ws;
+
+pub use error::AppError;
+pub use models::*;

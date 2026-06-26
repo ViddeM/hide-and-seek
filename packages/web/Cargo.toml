@@ -6,8 +6,21 @@ edition = "2021"
 [dependencies]
 dioxus = { workspace = true, features = ["router", "fullstack"] }
 ui = { workspace = true }
+api = { workspace = true }
+
+# server-only
+tokio = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
 
 [features]
 default = []
 web = ["dioxus/web"]
-server = ["dioxus/server", "ui/server"]
+server = [
+    "dioxus/server",
+    "ui/server",
+    "api/server",
+    "dep:tokio",
+    "dep:axum",
+    "dep:anyhow",
+]

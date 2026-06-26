@@ -263,3 +263,194 @@ The initial UI rendered by the component on the client must be identical to the 
 
 * Use the `use_server_future` hook instead of `use_resource`. It runs the future on the server, serializes the result, and sends it to the client, ensuring the client has the data immediately for its first render.
 * Any code that relies on browser-specific APIs (like accessing `localStorage`) must be run *after* hydration. Place this code inside a `use_effect` hook.
+
+# Database (sqlx)
+
+The connection pool lives in an Axum `Extension<PgPool>` injected at server startup. Inside server functions, extract it with `FullstackContext::extract`:
+
+```rust
+use axum::extract::Extension;
+use sqlx::PgPool;
+
+let pool: Extension<PgPool> = FullstackContext::extract().await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+let pool = pool.0;
+```
+
+Run migrations at startup (before serving):
+```rust
+sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
+```
+
+Use `sqlx::query_as!` with the struct name and SQL. If type inference fails on `query_scalar`, add explicit type: `sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ...").fetch_one(&pool).await?`.
+
+`FromRow` impls for server-only types must be gated: `#[cfg(feature = "server")] #[derive(sqlx::FromRow)]`.
+
+# JWT in Server Functions
+
+Claims are packed into a JWT signed with HS256 and delivered via an HTTP-only `Set-Cookie: auth=<token>` response header. To set a cookie from a server function, extract the `ResponseParts` extension:
+
+```rust
+use axum::http::header::{COOKIE, SET_COOKIE};
+use dioxus::fullstack::FullstackContext;
+
+let parts: axum::response::Parts = FullstackContext::extract().await?;
+parts.headers.append(SET_COOKIE, cookie_value.parse().unwrap());
+```
+
+To read the cookie, extract `axum_extra::extract::CookieJar`:
+```rust
+let jar: axum_extra::extract::CookieJar = FullstackContext::extract().await?;
+let token = jar.get("auth").map(|c| c.value().to_string());
+```
+
+`get_session()` returns `Result<Option<SessionInfo>, ServerFnError>` — `None` means no valid cookie, not an error.
+
+# WebSockets
+
+WebSocket upgrades cannot be handled by server functions (they need `WebSocketUpgrade` extractor). Add a dedicated Axum route alongside the Dioxus router:
+
+```rust
+let router = axum::Router::new()
+    .route("/api/ws/:game_id", axum::routing::get(api::ws::ws_handler))
+    .serve_dioxus_application(ServeConfig::new(), App)
+    .layer(axum::Extension(pool))
+    .layer(axum::Extension(hub));
+```
+
+The hub uses `tokio::sync::broadcast` channels per game. The handler upgrades, reads the `auth` cookie for role, then subscribes and filters messages by role.
+
+On the client side, open a WebSocket via JS interop (not a native Rust API):
+```rust
+use_effect(move || {
+    let js = format!("var ws=new WebSocket('ws://'+location.host+'/api/ws/{id}'); ...");
+    let _ = document::eval(&js);
+});
+```
+
+**axum 0.8 WebSocket change**: `Message::Text` now holds `Utf8Bytes` instead of `String`. When sending: `Message::Text(string.into())`. When receiving: pattern binds `Utf8Bytes` — use `.as_str()` to parse with serde.
+
+# Configuration (clap + dotenvy)
+
+```rust
+#[derive(clap::Parser)]
+pub struct Config {
+    #[arg(env = "DATABASE_URL")]
+    pub database_url: String,
+    #[arg(env = "JWT_SECRET")]
+    pub jwt_secret: String,
+    #[arg(env = "HOST", default_value = "0.0.0.0:8080")]
+    pub host: String,
+}
+
+impl Config {
+    pub fn load() -> Self {
+        dotenvy::dotenv().ok();
+        Self::parse()
+    }
+}
+```
+
+Wrap in `Arc<Config>` and inject as `axum::Extension(config)`. Extract in server functions the same way as `Extension<PgPool>`.
+
+# Logging
+
+Use `env_logger` (no `tracing` needed). Inject middleware via `axum::middleware::from_fn`:
+
+```rust
+pub async fn log_middleware(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    log::info!("→ {method} {path}");
+    let start = Instant::now();
+    let response = next.run(req).await;
+    let status = response.status();
+    let ms = start.elapsed().as_millis();
+    match status.is_server_error() {
+        true  => log::error!("← {status} {ms}ms {method} {path}"),
+        false if status.is_client_error() => log::warn!("← {status} {ms}ms {method} {path}"),
+        _     => log::info!("← {status} {ms}ms {method} {path}"),
+    }
+    response
+}
+```
+
+`tower-http`'s `TraceLayer` requires `tracing::Span` from the `tracing` crate — avoid it unless `tracing` is already a dependency.
+
+# Leaflet.js via eval()
+
+Inject Leaflet from CDN using `document::Link` / `document::Script` in RSX. Initialise the map with `use_effect` (runs only after hydration):
+
+```rust
+use_effect(move || {
+    let js = format!(r#"
+        (function(){{
+            if(window._map) return;
+            var m = L.map('map-div').fitBounds([[{sw},{sw_lng}],[{ne},{ne_lng}]]);
+            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png').addTo(m);
+            window._map = m; window._zones = {{}};
+        }})();
+    "#);
+    let _ = document::eval(&js);
+});
+```
+
+Sync a `Signal<Vec<Zone>>` to Leaflet circles in a second `use_effect` that reads the signal:
+```rust
+use_effect(move || {
+    let snap = zones.read().clone();
+    // build JS that removes stale circles and adds new ones
+    let _ = document::eval(&js);
+});
+```
+
+The `#leaflet-map` div must have an explicit height (e.g. `style: "height:100%"`).
+
+# Custom Axum Server Launch (Dioxus 0.7)
+
+Use `dioxus::serve(|| async { ... })` — the closure returns `Result<Router, anyhow::Error>`. Chain `.serve_dioxus_application(ServeConfig::new(), App)` on the router (from `DioxusRouterExt`):
+
+```rust
+dioxus::serve(|| async {
+    let pool = create_pool(&config.database_url).await?;
+    let router = axum::Router::new()
+        .route("/api/ws/{game_id}", axum::routing::get(ws_handler))
+        .serve_dioxus_application(dioxus::server::ServeConfig::new(), App)
+        .layer(axum::middleware::from_fn(log_middleware))
+        .layer(axum::Extension(pool));
+    Ok(router)
+});
+```
+
+`ServeConfig` is in `dioxus::server` (under `#[cfg(feature = "server")]`), not at the crate root.
+
+# Common Dioxus 0.7 Gotchas
+
+**`Navigator::push` return type**: Returns `Option<ExternalNavigationFailure>`, not `()`. Discard with `let _ = nav.push(...)` — otherwise closures passed to `EventHandler<()>` fail the `SpawnIfAsync` bound.
+
+**`EventHandler<()>` closure type**: Explicit type annotation needed: `move |_: ()| { ... }` (not `move |_| ...`).
+
+**Resource borrow lifetime**: `match &*resource.read() { ... }` — the temporary read guard must outlive the returned `Element`. Store in a binding first:
+```rust
+let guard = resource.read();
+let x = match &*guard { ... };
+x
+```
+
+**`Signal::write()` requires `mut`**: All signals that are ever written must be declared `let mut s = use_signal(...)`.
+
+**Borrow conflict on toggle**: `signal.set(!*signal.read())` borrows twice. Split it:
+```rust
+let v = *signal.read();
+signal.set(!v);
+```
+
+**PartialEq on all props**: Every struct used as a component prop must derive `PartialEq`. Add it to any model types used directly in props.
+
+**rand 0.9 API changes**: `distributions` → `distr`; `DistString` → `SampleString`; `thread_rng()` → `rng()`; `SliceRandom::choose` moved to `IndexedRandom::choose`.
+
+**axum 0.8 + dioxus-fullstack 0.7**: `dioxus-fullstack 0.7.9` depends on `axum = "0.8.4"` and `axum-core = "0.5.2"`. Using axum 0.7 causes `FromRequest` trait mismatch in `FullstackContext::extract()`.
+
+**axum 0.8 path param syntax**: Use `{param}` not `:param` in `.route()` strings. Example: `.route("/api/ws/{game_id}", ...)`. The old colon syntax panics at runtime with "Path segments must not start with `:`".
+
+**uuid on WASM**: Add `js` feature to the `uuid` workspace dependency so `v4` UUIDs work on `wasm32-unknown-unknown`: `uuid = { version = "1", features = ["v4", "serde", "js"] }`.

@@ -1,56 +1,71 @@
 use dioxus::prelude::*;
 
-use ui::Navbar;
-use views::{Blog, Home};
-
 mod views;
+
+use views::{HiderView, HostSetup, HostView, JoinGame, Lobby, LandingPage, NotFound, SeekerView};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    #[layout(WebNavbar)]
     #[route("/")]
-    Home {},
-    #[route("/blog/:id")]
-    Blog { id: i32 },
+    LandingPage {},
+    #[route("/join")]
+    JoinGame {},
+    #[route("/host")]
+    HostSetup {},
+    #[route("/game/:game_id/lobby")]
+    Lobby { game_id: String },
+    #[route("/game/:game_id/seeker")]
+    SeekerView { game_id: String },
+    #[route("/game/:game_id/hider")]
+    HiderView { game_id: String },
+    #[route("/game/:game_id/host")]
+    HostView { game_id: String },
+    #[route("/:..segments")]
+    NotFound { segments: Vec<String> },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
-fn main() {
-    dioxus::launch(App);
-}
-
 #[component]
 fn App() -> Element {
-    // Build cool things ✌️
-
     rsx! {
-        // Global app resources
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-
         Router::<Route> {}
     }
 }
 
-/// A web-specific Router around the shared `Navbar` component
-/// which allows us to use the web-specific `Route` enum.
-#[component]
-fn WebNavbar() -> Element {
-    rsx! {
-        Navbar {
-            Link {
-                to: Route::Home {},
-                "Home"
-            }
-            Link {
-                to: Route::Blog { id: 1 },
-                "Blog"
-            }
-        }
+#[cfg(not(feature = "server"))]
+fn main() {
+    dioxus::launch(App);
+}
 
-        Outlet::<Route> {}
-    }
+#[cfg(feature = "server")]
+fn main() {
+    use anyhow::Context as _;
+    use std::sync::Arc;
+
+    dioxus::serve(|| async {
+        let config = api::config::Config::load();
+        let pool = api::db::create_pool(&config.database_url)
+            .await
+            .context("Failed to connect to database")?;
+        let hub = Arc::new(api::ws::GameHub::new());
+        let config = Arc::new(config);
+
+        let router = axum::Router::new()
+            .route(
+                "/api/ws/{game_id}",
+                axum::routing::get(api::ws::ws_handler),
+            )
+            .serve_dioxus_application(dioxus::server::ServeConfig::new(), App)
+            .layer(axum::middleware::from_fn(api::middleware::log_middleware))
+            .layer(axum::Extension(pool))
+            .layer(axum::Extension(hub))
+            .layer(axum::Extension(config));
+
+        Ok(router)
+    });
 }
