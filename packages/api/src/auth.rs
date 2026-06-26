@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub async fn create_game(
     map_id: Uuid,
     host_display_name: String,
+    host_role: TeamRole,
 ) -> Result<CreateGameResponse, ServerFnError> {
     use crate::{jwt, AppError};
     use axum::extract::Extension;
@@ -41,21 +42,30 @@ pub async fn create_game(
         code
     };
 
-    let game_id: Uuid =
-        sqlx::query_scalar("INSERT INTO games (code, map_id) VALUES ($1, $2) RETURNING id")
-            .bind(&code)
-            .bind(map_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::Database)?;
+    // Start game immediately — no lobby needed for single-team play
+    let game_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO games (code, map_id, status) VALUES ($1, $2, 'active') RETURNING id",
+    )
+    .bind(&code)
+    .bind(map_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let role_str = match host_role {
+        TeamRole::Hider => "hider",
+        TeamRole::Seeker => "seeker",
+    };
 
     // Host gets a dedicated team
-    let team_id: Uuid =
-        sqlx::query_scalar("INSERT INTO teams (game_id, name, role) VALUES ($1, 'Host', 'hider') RETURNING id")
-            .bind(game_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::Database)?;
+    let team_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO teams (game_id, name, role) VALUES ($1, 'Host', $2::team_role) RETURNING id",
+    )
+    .bind(game_id)
+    .bind(role_str)
+    .fetch_one(&pool)
+    .await
+    .map_err(AppError::Database)?;
 
     let player_id: Uuid = sqlx::query_scalar(
         "INSERT INTO players (team_id, display_name, is_host) VALUES ($1, $2, true) RETURNING id",
@@ -66,15 +76,15 @@ pub async fn create_game(
     .await
     .map_err(AppError::Database)?;
 
-    let claims = jwt::Claims::new(player_id, game_id, team_id, TeamRole::Hider, true);
+    let claims = jwt::Claims::new(player_id, game_id, team_id, host_role, true);
     let token = jwt::sign(&claims, config.jwt_secret.as_bytes())
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     set_auth_cookie(&token);
 
-    log::info!("Game created: code={code} game_id={game_id} host={host_display_name}");
+    log::info!("Game created: code={code} game_id={game_id} host={host_display_name} role={role_str}");
 
-    Ok(CreateGameResponse { game_code: code, game_id, team_id, player_id })
+    Ok(CreateGameResponse { game_code: code, game_id, team_id, player_id, role: host_role })
 }
 
 /// Join an existing game as a player.
@@ -108,8 +118,8 @@ pub async fn join_game(
         .ok_or_else(|| AppError::NotFound(format!("Game with code {code} not found")))?;
 
     let status: String = game_row.try_get("status").map_err(AppError::Database)?;
-    if status != "lobby" {
-        return Err(AppError::BadRequest("Game has already started".to_string()).into());
+    if status == "finished" {
+        return Err(AppError::BadRequest("Game is already finished".to_string()).into());
     }
     let game_id: Uuid = game_row.try_get("id").map_err(AppError::Database)?;
 

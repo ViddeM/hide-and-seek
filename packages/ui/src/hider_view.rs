@@ -1,12 +1,13 @@
-use api::models::{DrawnCard, SessionInfo};
+use api::models::{DrawnCard, ExclusionZone, MapDetail, SessionInfo};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
 #[component]
-pub fn HiderViewComponent(game_id: Uuid, session: SessionInfo) -> Element {
+pub fn HiderViewComponent(game_id: Uuid, session: SessionInfo, map: MapDetail) -> Element {
     let mut hand: Signal<Vec<DrawnCard>> = use_signal(Vec::new);
     let mut draw_error = use_signal(|| None::<String>);
     let mut drawing = use_signal(|| false);
+    let mut zones: Signal<Vec<ExclusionZone>> = use_signal(Vec::new);
 
     // Load initial hand
     use_resource(move || async move {
@@ -15,10 +16,22 @@ pub fn HiderViewComponent(game_id: Uuid, session: SessionInfo) -> Element {
         }
     });
 
-    rsx! {
-        main { class: "hider-view",
-            h1 { "Hider View" }
+    // Load zones so hiders can see what has been deduced
+    use_resource(move || async move {
+        if let Ok(loaded) = api::zones::list_exclusion_zones(game_id).await {
+            zones.write().clone_from(&loaded);
+        }
+    });
 
+    rsx! {
+        div { class: "hider-view",
+            div { class: "hider-view__map",
+                crate::MapView {
+                    boundary: map.boundary.clone(),
+                    zones: zones,
+                }
+            }
+            div { class: "hider-view__panel",
             section { class: "draw-section",
                 h2 { "Draw Cards" }
                 div { class: "draw-buttons",
@@ -119,6 +132,13 @@ pub fn HiderViewComponent(game_id: Uuid, session: SessionInfo) -> Element {
                     }
                 }
             }
+
+            crate::RadarExplorer {
+                game_id: game_id,
+                is_seeker: false,
+                on_zone_added: move |_: ExclusionZone| {},
+            }
+            } // hider-view__panel
         }
     }
 }

@@ -5,9 +5,12 @@ pub fn HiderView(game_id: String) -> Element {
     let data = use_resource(move || {
         let _gid = game_id.clone();
         async move {
-            api::auth::get_session()
+            let session = api::auth::get_session()
                 .await?
-                .ok_or_else(|| ServerFnError::new("Not authenticated"))
+                .ok_or_else(|| ServerFnError::new("Not authenticated"))?;
+            let state = api::game::get_game_state(session.game_id).await?;
+            let map = api::maps::get_map(state.map_id).await?;
+            Ok::<_, ServerFnError>((session, map))
         }
     });
 
@@ -25,10 +28,11 @@ pub fn HiderView(game_id: String) -> Element {
                 }
             }
         }
-        Some(Ok(session)) => rsx! {
+        Some(Ok((session, map))) => rsx! {
             ui::hider_view::HiderViewComponent {
                 game_id: session.game_id,
                 session: session.clone(),
+                map: map.clone(),
             }
         },
     };

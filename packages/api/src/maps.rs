@@ -42,8 +42,7 @@ pub async fn get_map(map_id: Uuid) -> Result<MapDetail, ServerFnError> {
     let pool = pool.0;
 
     let map = sqlx::query(
-        "SELECT id, name, size::text AS size, bounds_sw_lat, bounds_sw_lng, bounds_ne_lat, bounds_ne_lng
-         FROM maps WHERE id = $1",
+        "SELECT id, name, size::text AS size, boundary_points::text AS boundary_points FROM maps WHERE id = $1",
     )
     .bind(map_id)
     .fetch_optional(&pool)
@@ -84,16 +83,14 @@ pub async fn get_map(map_id: Uuid) -> Result<MapDetail, ServerFnError> {
     })
     .collect();
 
+    let boundary_str: String = map.try_get("boundary_points").unwrap_or_default();
+    let boundary: Vec<[f64; 2]> = serde_json::from_str(&boundary_str).unwrap_or_default();
+
     Ok(MapDetail {
         id: map.try_get("id").unwrap_or_default(),
         name: map.try_get("name").unwrap_or_default(),
         size: parse_map_size(&map.try_get::<String, _>("size").unwrap_or_default()),
-        bounds: MapBounds {
-            sw_lat: map.try_get("bounds_sw_lat").unwrap_or_default(),
-            sw_lng: map.try_get("bounds_sw_lng").unwrap_or_default(),
-            ne_lat: map.try_get("bounds_ne_lat").unwrap_or_default(),
-            ne_lng: map.try_get("bounds_ne_lng").unwrap_or_default(),
-        },
+        boundary,
         stops,
         questions,
     })
@@ -116,16 +113,14 @@ pub async fn create_map(req: CreateMapRequest) -> Result<MapSummary, ServerFnErr
         MapSize::Large => "large",
     };
 
+    let boundary_json = serde_json::to_string(&req.boundary).unwrap_or_default();
+
     let map_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO maps (name, size, bounds_sw_lat, bounds_sw_lng, bounds_ne_lat, bounds_ne_lng)
-         VALUES ($1, $2::map_size, $3, $4, $5, $6) RETURNING id",
+        "INSERT INTO maps (name, size, boundary_points) VALUES ($1, $2::map_size, $3::jsonb) RETURNING id",
     )
     .bind(&req.name)
     .bind(size_str)
-    .bind(req.bounds.sw_lat)
-    .bind(req.bounds.sw_lng)
-    .bind(req.bounds.ne_lat)
-    .bind(req.bounds.ne_lng)
+    .bind(&boundary_json)
     .fetch_one(&pool)
     .await
     .map_err(AppError::Database)?;

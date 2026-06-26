@@ -66,6 +66,7 @@ pub struct CreateGameResponse {
     pub game_id: Uuid,
     pub team_id: Uuid,
     pub player_id: Uuid,
+    pub role: TeamRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,14 +98,6 @@ pub struct SessionInfo {
 // ── Maps ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MapBounds {
-    pub sw_lat: f64,
-    pub sw_lng: f64,
-    pub ne_lat: f64,
-    pub ne_lng: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MapSummary {
     pub id: Uuid,
     pub name: String,
@@ -133,7 +126,7 @@ pub struct MapDetail {
     pub id: Uuid,
     pub name: String,
     pub size: MapSize,
-    pub bounds: MapBounds,
+    pub boundary: Vec<[f64; 2]>,
     pub stops: Vec<MapStop>,
     pub questions: Vec<MapQuestion>,
 }
@@ -157,7 +150,7 @@ pub struct CreateQuestionRequest {
 pub struct CreateMapRequest {
     pub name: String,
     pub size: MapSize,
-    pub bounds: MapBounds,
+    pub boundary: Vec<[f64; 2]>,
     pub stops: Vec<CreateStopRequest>,
     pub questions: Vec<CreateQuestionRequest>,
 }

@@ -31,12 +31,7 @@ pub fn HostViewComponent(
         div { class: "host-view",
             div { class: "host-view__map",
                 crate::MapView {
-                    center_lat: (map.bounds.sw_lat + map.bounds.ne_lat) / 2.0,
-                    center_lng: (map.bounds.sw_lng + map.bounds.ne_lng) / 2.0,
-                    sw_lat: map.bounds.sw_lat,
-                    sw_lng: map.bounds.sw_lng,
-                    ne_lat: map.bounds.ne_lat,
-                    ne_lng: map.bounds.ne_lng,
+                    boundary: map.boundary.clone(),
                     zones: Signal::new(zone_list),
                 }
             }

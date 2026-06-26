@@ -424,6 +424,19 @@ dioxus::serve(|| async {
 
 `ServeConfig` is in `dioxus::server` (under `#[cfg(feature = "server")]`), not at the crate root.
 
+# Game Flow
+
+Games are created in **active** status immediately — there is no lobby phase to navigate through.
+
+```
+Create game → navigate directly to /game/:id/hider or /game/:id/seeker (based on chosen role)
+Join game   → navigate directly to /game/:id/hider or /game/:id/seeker (based on chosen role)
+```
+
+- The lobby route (`/game/:id/lobby`) still exists but is not used by the normal flow.
+- Joining an active game is allowed (players can join mid-game).
+- A game is fully playable with only one team — no minimum player count.
+
 # Common Dioxus 0.7 Gotchas
 
 **`Navigator::push` return type**: Returns `Option<ExternalNavigationFailure>`, not `()`. Discard with `let _ = nav.push(...)` — otherwise closures passed to `EventHandler<()>` fail the `SpawnIfAsync` bound.

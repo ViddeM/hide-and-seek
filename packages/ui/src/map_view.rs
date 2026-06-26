@@ -9,29 +9,35 @@ const LEAFLET_JS: &str =
 
 #[component]
 pub fn MapView(
-    center_lat: f64,
-    center_lng: f64,
-    sw_lat: f64,
-    sw_lng: f64,
-    ne_lat: f64,
-    ne_lng: f64,
+    boundary: Vec<[f64; 2]>,
     zones: Signal<Vec<ExclusionZone>>,
 ) -> Element {
-    // Initialise Leaflet after first render
+    // Initialise Leaflet after first render — async-poll for CDN load
     use_effect(move || {
-        let init_js = format!(
-            r#"
-            (function() {{
+        if boundary.is_empty() { return; }
+        let pts_json = serde_json::to_string(&boundary).unwrap_or_default();
+        let init_js = format!(r#"
+            (async function() {{
+                var tries = 0;
+                while (typeof L === 'undefined' && tries++ < 100) {{
+                    await new Promise(r => setTimeout(r, 100));
+                }}
+                if (typeof L === 'undefined') return;
                 if (window._hideseekMap) return;
-                var map = L.map('leaflet-map').fitBounds([[{sw_lat},{sw_lng}],[{ne_lat},{ne_lng}]]);
+                var pts = {pts_json};
+                var lats = pts.map(function(p){{return p[0];}});
+                var lngs = pts.map(function(p){{return p[1];}});
+                var swLat = Math.min.apply(null, lats), swLng = Math.min.apply(null, lngs);
+                var neLat = Math.max.apply(null, lats), neLng = Math.max.apply(null, lngs);
+                var map = L.map('leaflet-map').fitBounds([[swLat, swLng],[neLat, neLng]]);
                 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                     attribution: '&copy; OpenStreetMap contributors'
                 }}).addTo(map);
+                L.polygon(pts, {{color: '#6c63ff', fillOpacity: 0.08, weight: 2}}).addTo(map);
                 window._hideseekMap = map;
                 window._hideseekZones = {{}};
             }})();
-            "#
-        );
+        "#);
         let _ = document::eval(&init_js);
     });
 

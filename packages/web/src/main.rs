@@ -52,7 +52,7 @@ fn main() {
         let pool = api::db::create_pool(&config.database_url)
             .await
             .context("Failed to connect to database")?;
-        let hub = Arc::new(api::ws::GameHub::new());
+        let hub = api::ws::GameHub::new();
         let config = Arc::new(config);
 
         let router = axum::Router::new()

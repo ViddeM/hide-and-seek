@@ -15,6 +15,12 @@ pub use card_display::CardDisplay;
 mod map_view;
 pub use map_view::MapView;
 
+mod map_editor;
+pub use map_editor::BoundaryMapEditor;
+
+mod radar_explorer;
+pub use radar_explorer::RadarExplorer;
+
 pub mod landing;
 pub mod join;
 pub mod host_setup;

@@ -1,4 +1,4 @@
-use api::models::{CreateGameResponse, CreateMapRequest, MapBounds, MapSize, MapSummary};
+use api::models::{CreateGameResponse, CreateMapRequest, MapSize, MapSummary, TeamRole};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -7,6 +7,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
     let maps = use_resource(api::maps::list_maps);
 
     let mut host_name = use_signal(String::new);
+    let mut host_role = use_signal(|| TeamRole::Hider);
     let mut selected_map = use_signal(|| None::<Uuid>);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
@@ -18,10 +19,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
     // Map-creation form state
     let mut new_map_name = use_signal(String::new);
     let mut new_map_size = use_signal(|| MapSize::Medium);
-    let mut new_map_sw_lat = use_signal(String::new);
-    let mut new_map_sw_lng = use_signal(String::new);
-    let mut new_map_ne_lat = use_signal(String::new);
-    let mut new_map_ne_lng = use_signal(String::new);
+    let mut boundary = use_signal(Vec::<[f64; 2]>::new);
     let mut create_error = use_signal(|| None::<String>);
     let mut create_loading = use_signal(|| false);
 
@@ -54,9 +52,10 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
         };
         error.set(None);
         loading.set(true);
+        let role = *host_role.read();
 
         spawn(async move {
-            match api::auth::create_game(map_id, name_val).await {
+            match api::auth::create_game(map_id, name_val, role).await {
                 Ok(resp) => {
                     loading.set(false);
                     on_created.call(resp);
@@ -78,21 +77,9 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
             create_error.set(Some("Map name is required".to_string()));
             return;
         }
-        let parse = |s: &str| s.trim().parse::<f64>().ok();
-        let sw_lat = parse(&new_map_sw_lat.read());
-        let sw_lng = parse(&new_map_sw_lng.read());
-        let ne_lat = parse(&new_map_ne_lat.read());
-        let ne_lng = parse(&new_map_ne_lng.read());
-
-        let (Some(sw_lat), Some(sw_lng), Some(ne_lat), Some(ne_lng)) =
-            (sw_lat, sw_lng, ne_lat, ne_lng)
-        else {
-            create_error.set(Some("Enter valid coordinates for all four bounds".to_string()));
-            return;
-        };
-        if sw_lat >= ne_lat || sw_lng >= ne_lng {
-            create_error
-                .set(Some("SW corner must be south and west of the NE corner".to_string()));
+        let boundary_pts = boundary.read().clone();
+        if boundary_pts.len() < 3 {
+            create_error.set(Some("Place at least 3 waypoints on the map".to_string()));
             return;
         }
 
@@ -104,7 +91,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
             let req = CreateMapRequest {
                 name: name_val,
                 size,
-                bounds: MapBounds { sw_lat, sw_lng, ne_lat, ne_lng },
+                boundary: boundary_pts,
                 stops: vec![],
                 questions: vec![],
             };
@@ -115,10 +102,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                     new_maps.write().push(map);
                     show_create_map.set(false);
                     new_map_name.set(String::new());
-                    new_map_sw_lat.set(String::new());
-                    new_map_sw_lng.set(String::new());
-                    new_map_ne_lat.set(String::new());
-                    new_map_ne_lng.set(String::new());
+                    boundary.write().clear();
                     new_map_size.set(MapSize::Medium);
                 }
                 Err(e) => {
@@ -141,6 +125,28 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                     placeholder: "Host",
                     oninput: move |e| host_name.set(e.value()),
                     value: host_name.read().clone(),
+                }
+
+                fieldset { class: "role-toggle",
+                    legend { "Your Role" }
+                    label {
+                        input {
+                            r#type: "radio",
+                            name: "host-role",
+                            checked: *host_role.read() == TeamRole::Hider,
+                            onchange: move |_| host_role.set(TeamRole::Hider),
+                        }
+                        "Hider"
+                    }
+                    label {
+                        input {
+                            r#type: "radio",
+                            name: "host-role",
+                            checked: *host_role.read() == TeamRole::Seeker,
+                            onchange: move |_| host_role.set(TeamRole::Seeker),
+                        }
+                        "Seeker"
+                    }
                 }
 
                 label { "Select Map" }
@@ -215,53 +221,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                             option { value: "large", "Large" }
                         }
 
-                        p { class: "create-map-form__bounds-label", "Bounding Box" }
-                        div { class: "create-map-form__bounds",
-                            div { class: "bounds-pair",
-                                label { r#for: "sw-lat", "SW Latitude" }
-                                input {
-                                    id: "sw-lat",
-                                    r#type: "number",
-                                    step: "any",
-                                    placeholder: "e.g. 51.4",
-                                    oninput: move |e| new_map_sw_lat.set(e.value()),
-                                    value: new_map_sw_lat.read().clone(),
-                                }
-                            }
-                            div { class: "bounds-pair",
-                                label { r#for: "sw-lng", "SW Longitude" }
-                                input {
-                                    id: "sw-lng",
-                                    r#type: "number",
-                                    step: "any",
-                                    placeholder: "e.g. -0.2",
-                                    oninput: move |e| new_map_sw_lng.set(e.value()),
-                                    value: new_map_sw_lng.read().clone(),
-                                }
-                            }
-                            div { class: "bounds-pair",
-                                label { r#for: "ne-lat", "NE Latitude" }
-                                input {
-                                    id: "ne-lat",
-                                    r#type: "number",
-                                    step: "any",
-                                    placeholder: "e.g. 51.6",
-                                    oninput: move |e| new_map_ne_lat.set(e.value()),
-                                    value: new_map_ne_lat.read().clone(),
-                                }
-                            }
-                            div { class: "bounds-pair",
-                                label { r#for: "ne-lng", "NE Longitude" }
-                                input {
-                                    id: "ne-lng",
-                                    r#type: "number",
-                                    step: "any",
-                                    placeholder: "e.g. 0.1",
-                                    oninput: move |e| new_map_ne_lng.set(e.value()),
-                                    value: new_map_ne_lng.read().clone(),
-                                }
-                            }
-                        }
+                        crate::BoundaryMapEditor { boundary: boundary }
 
                         if let Some(msg) = create_error.read().as_ref() {
                             p { class: "form-error", "{msg}" }

@@ -38,12 +38,7 @@ pub fn SeekerViewComponent(
         div { class: "seeker-view",
             div { class: "seeker-view__map",
                 crate::MapView {
-                    center_lat: (map.bounds.sw_lat + map.bounds.ne_lat) / 2.0,
-                    center_lng: (map.bounds.sw_lng + map.bounds.ne_lng) / 2.0,
-                    sw_lat: map.bounds.sw_lat,
-                    sw_lng: map.bounds.sw_lng,
-                    ne_lat: map.bounds.ne_lat,
-                    ne_lng: map.bounds.ne_lng,
+                    boundary: map.boundary.clone(),
                     zones: zones,
                 }
             }
@@ -79,6 +74,14 @@ pub fn SeekerViewComponent(
                             },
                         }
                     }
+                }
+
+                crate::RadarExplorer {
+                    game_id: game_id,
+                    is_seeker: true,
+                    on_zone_added: move |zone: ExclusionZone| {
+                        zones.write().push(zone);
+                    },
                 }
             }
         }

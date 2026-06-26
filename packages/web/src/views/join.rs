@@ -25,7 +25,13 @@ pub fn JoinGame() -> Element {
         ui::join::JoinForm {
             initial_code: initial_code.read().clone(),
             on_joined: move |resp: api::models::JoinGameResponse| {
-                let _ = nav.push(Route::Lobby { game_id: resp.game_id.to_string() });
+                let game_id = resp.game_id.to_string();
+                let route = if resp.role == api::models::TeamRole::Seeker {
+                    Route::SeekerView { game_id }
+                } else {
+                    Route::HiderView { game_id }
+                };
+                let _ = nav.push(route);
             },
         }
     }
