@@ -467,3 +467,5 @@ signal.set(!v);
 **axum 0.8 path param syntax**: Use `{param}` not `:param` in `.route()` strings. Example: `.route("/api/ws/{game_id}", ...)`. The old colon syntax panics at runtime with "Path segments must not start with `:`".
 
 **uuid on WASM**: Add `js` feature to the `uuid` workspace dependency so `v4` UUIDs work on `wasm32-unknown-unknown`: `uuid = { version = "1", features = ["v4", "serde", "js"] }`.
+
+**`GameHub::new()` already returns `Arc<Self>`**: Do not wrap it again. `Arc::new(GameHub::new())` produces `Arc<Arc<GameHub>>`, which is registered under a different `TypeId` than `Arc<GameHub>`. Server functions extracting `Extension<Arc<GameHub>>` will get a 500 "extension not found" at runtime. Correct usage: `let hub = api::ws::GameHub::new();` then `.layer(axum::Extension(hub))`.

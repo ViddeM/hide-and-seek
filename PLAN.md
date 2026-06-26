@@ -23,9 +23,19 @@ Seekers can add questions available for the given map size, e.g. "Are you within
 If the answer to "within 5km" is "yes", the area outside that circle is excluded. If "no", the inside is excluded.
 The seeker view should update in real-time across all connected seeker devices using WebSockets, so all seekers see exclusion zones as teammates add them.
 
+**Implemented:** Seeker view has a Radar question explorer where seekers can pick a map centre, adjust the radius, toggle Yes/No, preview the resulting circle, and apply it as a real exclusion zone.
+
 ### Hider view
 The hider view shows the relevant game information for the hiding team, including the card drawing mechanic when responding to questions.
 The hider view is strictly isolated from the seeker view — hiders must not be able to access or infer what the seekers have marked.
+
+**Implemented:** Hider view has a read-only Radar question explorer (same UI, no Apply buttons) so hiders can explore how a question would affect the map without acting on it.
+
+### Game flow
+Games are created in **active** status immediately — there is no lobby phase.
+A game is fully playable with only one team (either hider or seeker alone).
+The host selects their role (Hider or Seeker) at creation time and is routed directly to the appropriate view.
+Players who join via game code are also routed directly to their role view.
 
 ## Authentication
 The app uses a game-code-based authentication system (similar to Jackbox or Kahoot), with no persistent user accounts required:
