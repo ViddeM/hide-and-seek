@@ -2,115 +2,113 @@
 CREATE TYPE map_size AS ENUM ('small', 'medium', 'large');
 
 CREATE TABLE maps (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id             UUID DEFAULT gen_random_uuid(),
     name           TEXT NOT NULL,
     size           map_size NOT NULL,
-    bounds_sw_lat  DOUBLE PRECISION NOT NULL,
-    bounds_sw_lng  DOUBLE PRECISION NOT NULL,
-    bounds_ne_lat  DOUBLE PRECISION NOT NULL,
-    bounds_ne_lng  DOUBLE PRECISION NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+    bounds         UUID NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
--- Named stops on the map (train stations, airports, etc.)
-CREATE TABLE map_stops (
-    id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    map_id    UUID NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-    name      TEXT NOT NULL,
-    lat       DOUBLE PRECISION NOT NULL,
-    lng       DOUBLE PRECISION NOT NULL,
-    stop_type TEXT NOT NULL
-);
+    PRIMARY KEY (id),
 
--- Questions available for each map (can include radius-based questions)
-CREATE TABLE map_questions (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    map_id        UUID NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
-    text          TEXT NOT NULL,
-    radius_m      INTEGER,
-    requires_stop BOOLEAN NOT NULL DEFAULT false
+    FOREIGN KEY (bounds) REFERENCES polygon(id)
 );
 
 -- Games
 CREATE TYPE game_status AS ENUM ('lobby', 'active', 'finished');
 
 CREATE TABLE games (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id          UUID DEFAULT gen_random_uuid(),
     code        CHAR(6) NOT NULL UNIQUE,
-    map_id      UUID NOT NULL REFERENCES maps(id),
+    map_id      UUID NOT NULL,
     status      game_status NOT NULL DEFAULT 'lobby',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at  TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (map_id) REFERENCES maps(id)
 );
 
 CREATE INDEX games_code_idx ON games(code);
 
--- Teams
-CREATE TYPE team_role AS ENUM ('hider', 'seeker');
-
-CREATE TABLE teams (
-    id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id  UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    name     TEXT NOT NULL,
-    role     team_role NOT NULL,
-    UNIQUE(game_id, name)
-);
-
--- Players (ephemeral per game session, no persistent accounts)
-CREATE TABLE players (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    team_id      UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    display_name TEXT NOT NULL,
-    is_host      BOOLEAN NOT NULL DEFAULT false,
-    joined_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Card definitions (static, seeded in migration 002)
-CREATE TYPE card_type AS ENUM ('bonus', 'curse');
-
-CREATE TABLE cards (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        TEXT NOT NULL UNIQUE,
-    card_type   card_type NOT NULL,
-    effect      TEXT NOT NULL,
-    flavor_text TEXT
-);
-
--- Cards drawn by a team during a game
-CREATE TABLE drawn_cards (
-    id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id   UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    team_id   UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    card_id   UUID NOT NULL REFERENCES cards(id),
-    drawn_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    played_at TIMESTAMPTZ
-);
-
 -- Exclusion zones added by seekers (core real-time data)
 CREATE TABLE exclusion_zones (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id         UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    team_id         UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    question_id     UUID REFERENCES map_questions(id),
-    center_lat      DOUBLE PRECISION NOT NULL,
-    center_lng      DOUBLE PRECISION NOT NULL,
-    radius_m        INTEGER NOT NULL,
-    -- true  = exclude OUTSIDE the circle (answer was "yes, within X km")
-    -- false = exclude INSIDE the circle (answer was "no, not within X km")
+    id              UUID DEFAULT gen_random_uuid(),
+    game_id         UUID NOT NULL,
+    area_id         UUID NOT NULL,
+    -- Whether the exclusion zone is for the 'outside' of the area (true) or the 'inside' of the area (false).
+    -- Outside is defined as the area left of the points in this shape when traversed in clockwise order.
+    -- For a line this is 
     exclude_outside BOOLEAN NOT NULL,
     label           TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
 );
 
 CREATE INDEX exclusion_zones_game_idx ON exclusion_zones(game_id);
 
--- Turn tracking
-CREATE TABLE turns (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id      UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    hiding_team  UUID NOT NULL REFERENCES teams(id),
-    turn_number  INTEGER NOT NULL,
-    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ended_at     TIMESTAMPTZ
+#[diesel(sql_type = diesel::sql_types::Text)]
+-- A line, defined by two points.
+CREATE TABLE line (
+    id          UUID DEFAULT gen_random_uuid(),
+    start_lat   DOUBLE PRECISION NOT NULL,
+    start_lng   DOUBLE PRECISION NOT NULL,
+    end_lat     DOUBLE PRECISION NOT NULL,
+    end_lng     DOUBLE PRECISION NOT NULL,
+
+    PRIMARY KEY (id)
+);
+
+-- A circle, defined by a center point and a radius in meters.
+CREATE TABLE circle (
+    id              UUID DEFAULT gen_random_uuid(),
+    center_lat      DOUBLE PRECISION NOT NULL,
+    center_lng      DOUBLE PRECISION NOT NULL,
+    radius_meters   INTEGER NOT NULL,
+
+    PRIMARY KEY (id)
+);
+
+-- A polygon, a closed shape defined by a series of points in clockwise order.
+CREATE TABLE polygon (
+    id UUID DEFAULT gen_random_uuid(),
+
+    PRIMARY KEY (id)
+);
+
+-- A point in a polygon, used to define the shape of the polygon.
+CREATE TABLE polygon_point (
+    id          UUID DEFAULT gen_random_uuid(),
+    -- The number of the point in the polygon, starting at 0 and increasing clockwise.
+    number      INTEGER NOT NULL,
+    polygon_id  UUID NOT NULL,
+    lat         DOUBLE PRECISION NOT NULL,
+    lng         DOUBLE PRECISION NOT NULL,
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (polygon_id) REFERENCES polygon(id)
+);
+
+-- An area on the map, can be one of a number of different shapes.
+CREATE TABLE area (
+    id          UUID DEFAULT gen_random_uuid(),
+    line_id     UUID NULL,
+    circle_id   UUID NULL,
+    polygon_id  UUID NULL,
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (line_id) REFERENCES line(id),
+    FOREIGN KEY (circle_id) REFERENCES circle(id),
+    FOREIGN KEY (polygon_id) REFERENCES polygon(id),
+
+    CHECK (
+        num_nonnulls(line_id, circle_id, polygon_id) = 1
+    )
 );
