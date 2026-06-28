@@ -5,6 +5,5 @@ pub mod game;
 pub mod game_status;
 pub mod line;
 pub mod map;
-pub mod map_size;
 pub mod polygon;
 pub mod polygon_point;

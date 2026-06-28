@@ -19,7 +19,6 @@ axum-extra = { workspace = true, optional = true }
 tower-http = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
-dotenvy = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
@@ -36,7 +35,6 @@ server = [
     "dep:tower-http",
     "dep:jsonwebtoken",
     "dep:clap",
-    "dep:dotenvy",
     "dep:env_logger",
     "dep:log",
     "dep:rand",

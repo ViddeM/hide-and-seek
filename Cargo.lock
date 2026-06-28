@@ -91,7 +91,6 @@ dependencies = [
  "chrono",
  "clap",
  "dioxus",
- "dotenvy",
  "env_logger",
  "futures-util",
  "jsonwebtoken",
@@ -4585,7 +4584,9 @@ dependencies = [
  "anyhow",
  "api",
  "axum",
+ "clap",
  "dioxus",
+ "dotenvy",
  "tokio",
  "ui",
 ]

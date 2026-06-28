@@ -1,28 +1,32 @@
+#[cfg(feature = "server")]
+use api::cli::Cli;
+#[cfg(feature = "server")]
+use clap::Parser;
 use dioxus::prelude::*;
 
 mod views;
 
-use views::{HiderView, HostSetup, HostView, JoinGame, Lobby, LandingPage, NotFound, SeekerView};
+use views::{HostSetup, LandingPage};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
     #[route("/")]
     LandingPage {},
-    #[route("/join")]
-    JoinGame {},
+    // #[route("/join")]
+    // JoinGame {},
     #[route("/host")]
     HostSetup {},
-    #[route("/game/:game_id/lobby")]
-    Lobby { game_id: String },
-    #[route("/game/:game_id/seeker")]
-    SeekerView { game_id: String },
-    #[route("/game/:game_id/hider")]
-    HiderView { game_id: String },
-    #[route("/game/:game_id/host")]
-    HostView { game_id: String },
-    #[route("/:..segments")]
-    NotFound { segments: Vec<String> },
+    // #[route("/game/:game_id/lobby")]
+    // Lobby { game_id: String },
+    // #[route("/game/:game_id/seeker")]
+    // SeekerView { game_id: String },
+    // #[route("/game/:game_id/hider")]
+    // HiderView { game_id: String },
+    // #[route("/game/:game_id/host")]
+    // HostView { game_id: String },
+    // #[route("/:..segments")]
+    // NotFound { segments: Vec<String> },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -44,27 +48,23 @@ fn main() {
 
 #[cfg(feature = "server")]
 fn main() {
-    use anyhow::Context as _;
-    use std::sync::Arc;
+    dotenvy::dotenv().ok();
 
     dioxus::serve(|| async {
-        let config = api::config::Config::load();
-        let pool = api::db::create_pool(&config.database_url)
+        let args = Cli::parse();
+
+        let pool = api::db::create_pool(&args.database_url)
             .await
             .context("Failed to connect to database")?;
-        let hub = api::ws::GameHub::new();
-        let config = Arc::new(config);
+
+        // let hub = api::ws::GameHub::new();
 
         let router = axum::Router::new()
-            .route(
-                "/api/ws/{game_id}",
-                axum::routing::get(api::ws::ws_handler),
-            )
             .serve_dioxus_application(dioxus::server::ServeConfig::new(), App)
-            .layer(axum::middleware::from_fn(api::middleware::log_middleware))
-            .layer(axum::Extension(pool))
-            .layer(axum::Extension(hub))
-            .layer(axum::Extension(config));
+            .layer(axum::middleware::from_fn(
+                api::middleware::logging::log_middleware,
+            ))
+            .layer(axum::Extension(pool));
 
         Ok(router)
     });

@@ -98,8 +98,8 @@ fn AddZoneForm(
     let mut lng = use_signal(String::new);
     let mut radius = use_signal(|| "500".to_string());
     let mut label = use_signal(String::new);
-    let mut exclude_outside = use_signal(|| false);
     let mut selected_question = use_signal(|| None::<Uuid>);
+    let mut exclude_outside = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
 
@@ -177,9 +177,10 @@ fn AddZoneForm(
                         checked: *exclude_outside.read(),
                         onchange: move |e| exclude_outside.set(e.checked()),
                     }
-                    "Must be inside this zone"
+                    "Hider is inside (exclude outside)"
                 }
             }
+
             if !map_questions.is_empty() {
                 div { class: "form-row",
                     label { "Link to question" }
@@ -230,7 +231,7 @@ fn ZoneItem(zone: ExclusionZone, game_id: Uuid, on_removed: EventHandler<Uuid>) 
                 }
                 span { "{zone.radius_m}m" }
                 if zone.exclude_outside {
-                    span { class: "zone-item__outside", " · inside only" }
+                    span { class: "zone-item__tag", " · inside only" }
                 }
             }
             button {

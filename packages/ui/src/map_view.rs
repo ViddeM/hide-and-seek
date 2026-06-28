@@ -7,6 +7,36 @@ const LEAFLET_CSS: &str =
 const LEAFLET_JS: &str =
     "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
+/// Converts a circle (lat/lng centre, radius in metres) to an N-point lat/lng ring.
+const CIRCLE_RING_FN: &str = r#"
+function _circleRing(lat,lng,r,n){
+    var R=6371000,pts=[];
+    for(var i=0;i<n;i++){
+        var a=2*Math.PI*i/n;
+        var dlat=r*Math.cos(a)/R*(180/Math.PI);
+        var dlng=r*Math.sin(a)/(R*Math.cos(lat*Math.PI/180))*(180/Math.PI);
+        pts.push([lat+dlat,lng+dlng]);
+    }
+    return pts;
+}
+"#;
+
+/// Restore all zones to their base style (called before applying a highlight).
+pub const RESTORE_ZONES_FN: &str = r#"
+function _restoreZones(){
+    var z=window._hideseekZones||{};
+    var meta=window._hideseekZoneMeta||{};
+    Object.keys(z).forEach(function(id){
+        var m=meta[id];if(!m)return;
+        if(m.eo){
+            z[id].setStyle({fillColor:'#1e1e50',fillOpacity:0.45,stroke:false,weight:0});
+        }else{
+            z[id].setStyle({color:'#1e1e50',fillColor:'#1e1e50',fillOpacity:0.55,weight:2,stroke:true});
+        }
+    });
+}
+"#;
+
 #[component]
 pub fn MapView(
     boundary: Vec<[f64; 2]>,
@@ -25,6 +55,7 @@ pub fn MapView(
                 if (typeof L === 'undefined') return;
                 if (window._hideseekMap) return;
                 var pts = {pts_json};
+                window._hideseekBoundary = pts;
                 var lats = pts.map(function(p){{return p[0];}});
                 var lngs = pts.map(function(p){{return p[1];}});
                 var swLat = Math.min.apply(null, lats), swLng = Math.min.apply(null, lngs);
@@ -33,46 +64,94 @@ pub fn MapView(
                 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                     attribution: '&copy; OpenStreetMap contributors'
                 }}).addTo(map);
-                L.polygon(pts, {{color: '#6c63ff', fillOpacity: 0.08, weight: 2}}).addTo(map);
+                // Shade everything outside the play area
+                var world = [[-90,-180],[-90,180],[90,180],[90,-180]];
+                L.polygon([world, pts], {{
+                    fillColor: '#1e1e50',
+                    fillOpacity: 0.45,
+                    stroke: false,
+                    interactive: false,
+                    className: 'outside-boundary'
+                }}).addTo(map);
+                // Crisp play-area border
+                L.polygon(pts, {{
+                    color: '#6c63ff',
+                    weight: 2,
+                    fillOpacity: 0,
+                    interactive: false
+                }}).addTo(map);
                 window._hideseekMap = map;
                 window._hideseekZones = {{}};
+                window._hideseekZoneMeta = {{}};
             }})();
         "#);
         let _ = document::eval(&init_js);
     });
 
-    // Sync zones signal → Leaflet circles
+    // Sync zones signal → Leaflet layers.
+    // Every zone — whether Yes (exclude outside) or No (exclude circle) — gets its own
+    // named layer stored in _hideseekZones[id] so it can be highlighted individually.
     use_effect(move || {
         let zones_snap = zones.read().clone();
-        let mut js = String::new();
 
-        // Remove circles no longer in the list
-        js.push_str("(function(){var m=window._hideseekMap;if(!m)return;var z=window._hideseekZones||{};");
+        let mut js = String::new();
+        js.push_str("(function(){");
+        js.push_str("var m=window._hideseekMap;if(!m)return;");
+        js.push_str("var boundary=window._hideseekBoundary;");
+        js.push_str(CIRCLE_RING_FN);
+        js.push_str("var z=window._hideseekZones||{};");
+        js.push_str("var meta=window._hideseekZoneMeta||{};");
+
+        // Build set of current zone IDs and remove any stale layers
         js.push_str("var ids={");
-        for z in &zones_snap {
-            js.push_str(&format!("'{}':1,", z.id));
+        for zone in &zones_snap {
+            js.push_str(&format!("'{}':1,", zone.id));
         }
         js.push_str("};");
-        js.push_str("Object.keys(z).forEach(function(id){if(!ids[id]){m.removeLayer(z[id]);delete z[id];}});");
+        js.push_str("Object.keys(z).forEach(function(id){if(!ids[id]){m.removeLayer(z[id]);delete z[id];delete meta[id];}});");
 
-        // Add new circles
-        for z in &zones_snap {
-            let color = if z.exclude_outside { "#e74c3c" } else { "#3498db" };
-            let label = z.label.as_deref().unwrap_or("");
-            js.push_str(&format!(
-                "if(!z['{id}']){{var c=L.circle([{lat},{lng}],{{radius:{r},color:'{color}',fillOpacity:0.15}}).addTo(m);",
-                id = z.id,
-                lat = z.center_lat,
-                lng = z.center_lng,
-                r = z.radius_m,
-            ));
+        // Add any zones not yet on the map
+        for zone in &zones_snap {
+            let label = zone.label.as_deref().unwrap_or("").replace('\'', "\\'");
+            let id = zone.id;
+            let lat = zone.center_lat;
+            let lng = zone.center_lng;
+            let r = zone.radius_m;
+
+            if zone.exclude_outside {
+                // Yes zone: boundary polygon with this circle cut out as a hole.
+                // mix-blend-mode: darken (via CSS class) means multiple such polygons
+                // don't compound — the union looks like one flat shaded area.
+                js.push_str(&format!(
+                    "if(!z['{id}']&&boundary&&boundary.length>0){{\
+                        var ring=_circleRing({lat},{lng},{r},64);\
+                        var c=L.polygon([boundary,ring],{{\
+                            fillColor:'#1e1e50',fillOpacity:0.45,\
+                            stroke:false,interactive:false,className:'zone-excluded'\
+                        }}).addTo(m);"
+                ));
+            } else {
+                // No zone: simple shaded circle.
+                js.push_str(&format!(
+                    "if(!z['{id}']){{\
+                        var c=L.circle([{lat},{lng}],{{\
+                            radius:{r},color:'#1e1e50',fillColor:'#1e1e50',\
+                            fillOpacity:0.55,weight:2,className:'zone-excluded'\
+                        }}).addTo(m);"
+                ));
+            }
             if !label.is_empty() {
                 js.push_str(&format!("c.bindTooltip('{label}');"));
             }
-            js.push_str(&format!("z['{}'] = c;}}", z.id));
+            let eo = zone.exclude_outside;
+            js.push_str(&format!(
+                "z['{id}']=c; meta['{id}']={{eo:{eo}}};\
+                }}"
+            ));
         }
-        js.push_str("window._hideseekZones=z;})();");
 
+        js.push_str("window._hideseekZones=z; window._hideseekZoneMeta=meta;");
+        js.push_str("})();");
         let _ = document::eval(&js);
     });
 
@@ -86,32 +165,34 @@ pub fn MapView(
     }
 }
 
-/// Called from seeker view to add a zone via JS (for optimistic UI).
-#[allow(dead_code)]
-pub fn js_add_zone(zone: &ExclusionZone) -> String {
-    let color = if zone.exclude_outside { "#e74c3c" } else { "#3498db" };
-    let label = zone.label.as_deref().unwrap_or("");
-    let mut js = format!(
-        "(function(){{var m=window._hideseekMap;if(!m)return;var z=window._hideseekZones||{{}};",
-    );
-    js.push_str(&format!(
-        "var c=L.circle([{lat},{lng}],{{radius:{r},color:'{color}',fillOpacity:0.15}}).addTo(m);",
-        lat = zone.center_lat,
-        lng = zone.center_lng,
-        r = zone.radius_m,
-    ));
-    if !label.is_empty() {
-        js.push_str(&format!("c.bindTooltip('{label}');"));
-    }
-    js.push_str(&format!("z['{}'] = c;window._hideseekZones=z;}})();", zone.id));
-    js
+/// Highlight one zone by id (pass empty string to clear all highlights).
+pub fn js_highlight_zone(zone_id: Option<Uuid>) -> String {
+    let id_str = zone_id.map(|id| id.to_string()).unwrap_or_default();
+    format!(
+        r#"(function(){{
+            {restore}
+            var tid='{id}';
+            var z=window._hideseekZones||{{}};
+            if(tid&&z[tid]){{
+                z[tid].setStyle({{color:'#e67e22',fillColor:'#e67e22',fillOpacity:0.70,weight:3,stroke:true}});
+                z[tid].bringToFront();
+            }}
+        }})()"#,
+        restore = RESTORE_ZONES_FN,
+        id = id_str,
+    )
 }
 
-/// Remove a zone circle from Leaflet.
+/// Remove a zone from the Leaflet map.
 #[allow(dead_code)]
 pub fn js_remove_zone(zone_id: Uuid) -> String {
     format!(
-        "(function(){{var z=window._hideseekZones;if(z&&z['{id}']){{window._hideseekMap.removeLayer(z['{id}']);delete z['{id}'];}}}})();",
+        "(function(){{\
+            var z=window._hideseekZones;\
+            if(z&&z['{id}']){{window._hideseekMap.removeLayer(z['{id}']);delete z['{id}'];}}\
+            var meta=window._hideseekZoneMeta;\
+            if(meta){{delete meta['{id}'];}}\
+        }})();",
         id = zone_id,
     )
 }

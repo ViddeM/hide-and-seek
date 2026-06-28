@@ -1,58 +1,3 @@
--- Maps (reusable across games)
-CREATE TYPE map_size AS ENUM ('small', 'medium', 'large');
-
-CREATE TABLE maps (
-    id             UUID DEFAULT gen_random_uuid(),
-    name           TEXT NOT NULL,
-    size           map_size NOT NULL,
-    bounds         UUID NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    PRIMARY KEY (id),
-
-    FOREIGN KEY (bounds) REFERENCES polygon(id)
-);
-
--- Games
-CREATE TYPE game_status AS ENUM ('lobby', 'active', 'finished');
-
-CREATE TABLE games (
-    id          UUID DEFAULT gen_random_uuid(),
-    code        CHAR(6) NOT NULL UNIQUE,
-    map_id      UUID NOT NULL,
-    status      game_status NOT NULL DEFAULT 'lobby',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at  TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-
-    PRIMARY KEY (id),
-
-    FOREIGN KEY (map_id) REFERENCES maps(id)
-);
-
-CREATE INDEX games_code_idx ON games(code);
-
--- Exclusion zones added by seekers (core real-time data)
-CREATE TABLE exclusion_zones (
-    id              UUID DEFAULT gen_random_uuid(),
-    game_id         UUID NOT NULL,
-    area_id         UUID NOT NULL,
-    -- Whether the exclusion zone is for the 'outside' of the area (true) or the 'inside' of the area (false).
-    -- Outside is defined as the area left of the points in this shape when traversed in clockwise order.
-    -- For a line this is 
-    exclude_outside BOOLEAN NOT NULL,
-    label           TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    PRIMARY KEY (id),
-
-    FOREIGN KEY (game_id) REFERENCES games(id),
-    FOREIGN KEY (team_id) REFERENCES teams(id)
-);
-
-CREATE INDEX exclusion_zones_game_idx ON exclusion_zones(game_id);
-
-#[diesel(sql_type = diesel::sql_types::Text)]
 -- A line, defined by two points.
 CREATE TABLE line (
     id          UUID DEFAULT gen_random_uuid(),
@@ -112,3 +57,60 @@ CREATE TABLE area (
         num_nonnulls(line_id, circle_id, polygon_id) = 1
     )
 );
+
+-- Maps (reusable across games)
+CREATE TYPE map_size AS ENUM ('small', 'medium', 'large');
+
+CREATE TABLE maps (
+    id             UUID DEFAULT gen_random_uuid(),
+    name           TEXT NOT NULL,
+    size           map_size NOT NULL,
+    bounds         UUID NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (bounds) REFERENCES polygon(id)
+);
+
+
+-- Games
+CREATE TYPE game_status AS ENUM ('lobby', 'active', 'finished');
+
+CREATE TABLE games (
+    id          UUID DEFAULT gen_random_uuid(),
+    code        CHAR(6) NOT NULL UNIQUE,
+    map_id      UUID NOT NULL,
+    status      game_status NOT NULL DEFAULT 'lobby',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at  TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (map_id) REFERENCES maps(id)
+);
+
+CREATE INDEX games_code_idx ON games(code);
+
+
+
+-- Exclusion zones added by seekers (core real-time data)
+CREATE TABLE exclusion_zones (
+    id              UUID DEFAULT gen_random_uuid(),
+    game_id         UUID NOT NULL,
+    area_id         UUID NOT NULL,
+    -- Whether the exclusion zone is for the 'outside' of the area (true) or the 'inside' of the area (false).
+    -- Outside is defined as the area left of the points in this shape when traversed in clockwise order.
+    -- For a line this is 
+    exclude_outside BOOLEAN NOT NULL,
+    label           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (id),
+
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (area_id) REFERENCES area(id)
+);
+
+CREATE INDEX exclusion_zones_game_idx ON exclusion_zones(game_id);

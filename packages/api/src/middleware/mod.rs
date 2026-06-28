@@ -1,2 +1,1 @@
-mod logging;
-pub use logging::log_middleware;
+pub mod logging;

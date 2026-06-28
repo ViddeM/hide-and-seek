@@ -521,7 +521,7 @@ input:focus, select:focus { border-color: var(--color-primary); }
 .radar-explorer__label { font-size: 0.8rem; color: var(--color-muted); white-space: nowrap; min-width: 50px; }
 .radar-explorer__radius-val { font-size: 0.8rem; min-width: 50px; text-align: right; }
 input[type="range"] { flex: 1; accent-color: var(--color-primary); }
-.radar-explorer__toggle { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+.radar-explorer__toggle { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
 .radar-explorer__impact { font-size: 0.8rem; color: var(--color-muted); margin-bottom: 0.5rem; }
 .radar-explorer__apply { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .btn--sm { padding: 0.4rem 0.75rem; font-size: 0.825rem; }
@@ -551,6 +551,55 @@ input[type="range"] { flex: 1; accent-color: var(--color-primary); }
   font-weight: 600;
 }
 .radar-toggle--yes.radar-toggle--active { background: var(--color-success); color: #fff; }
+.zone-item__tag { font-size: 0.75rem; color: var(--color-muted); }
+
+/* ── Asked Questions list ──────────────────────────────────────── */
+.asked-questions {
+  margin-top: 1rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+}
+.asked-questions__title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 0.5rem;
+}
+.asked-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.asked-question:last-child { border-bottom: none; }
+.asked-question__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.asked-question__answer {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.asked-question__answer--yes { color: var(--color-success); }
+.asked-question__answer--no  { color: var(--color-danger); }
+.asked-question__detail {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  font-family: monospace;
+}
+
+/* ── Zone / boundary map layers ───────────────────────────────── */
+/* Prevent overlapping excluded zones from compounding their shade */
+.leaflet-overlay-pane path.zone-excluded,
+.leaflet-overlay-pane path.outside-boundary {
+  mix-blend-mode: darken;
+}
 
 /* ── Host View ─────────────────────────────────────────────── */
 .host-view {

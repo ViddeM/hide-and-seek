@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
-use crate::db::tables::map_size::MapSize;
+use crate::types::map_size::MapSize;
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Map {

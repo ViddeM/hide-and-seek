@@ -12,6 +12,8 @@ api = { workspace = true }
 tokio = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+dotenvy = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -23,4 +25,6 @@ server = [
     "dep:tokio",
     "dep:axum",
     "dep:anyhow",
+    "dep:clap",
+    "dep:dotenvy",
 ]
