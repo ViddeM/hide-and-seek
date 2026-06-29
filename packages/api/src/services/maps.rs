@@ -6,6 +6,29 @@ use crate::error::AppError;
 use crate::types::{area::Polygon, map_size::MapSize};
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MapDetail {
+    pub id: Uuid,
+    pub name: String,
+    pub size: MapSize,
+    pub boundary: Polygon,
+}
+
+pub async fn get_map(pool: &PgPool, map_id: Uuid) -> Result<MapDetail, AppError> {
+    let map = queries::maps::get_map_by_id(pool, map_id)
+        .await
+        .map_err(AppError::from)?;
+    let points = queries::maps::get_polygon_points(pool, map.bounds)
+        .await
+        .map_err(AppError::from)?;
+    Ok(MapDetail {
+        id: map.id,
+        name: map.name,
+        size: map.size,
+        boundary: Polygon { vertices: points },
+    })
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct MapSummary {
     pub id: Uuid,
     pub name: String,

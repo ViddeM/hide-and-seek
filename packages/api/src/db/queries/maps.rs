@@ -1,7 +1,13 @@
 use crate::db::tables::map::Map;
 use crate::types::{map_size::MapSize, Point};
-use sqlx::{PgConnection, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
+
+#[derive(FromRow)]
+struct PointRow {
+    lat: f64,
+    lng: f64,
+}
 
 /// Fetch all maps from the database
 pub async fn get_all_maps(pool: &PgPool) -> Result<Vec<Map>, sqlx::Error> {
@@ -15,6 +21,27 @@ pub async fn get_all_maps(pool: &PgPool) -> Result<Vec<Map>, sqlx::Error> {
     )
     .fetch_all(pool)
     .await
+}
+
+pub async fn get_map_by_id(pool: &PgPool, map_id: Uuid) -> Result<Map, sqlx::Error> {
+    sqlx::query_as::<_, Map>(
+        //language=PostgreSQL
+        "SELECT id, name, size, bounds, created_at FROM maps WHERE id = $1",
+    )
+    .bind(map_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_polygon_points(pool: &PgPool, polygon_id: Uuid) -> Result<Vec<Point>, sqlx::Error> {
+    sqlx::query_as::<_, PointRow>(
+        //language=PostgreSQL
+        "SELECT lat, lng FROM polygon_point WHERE polygon_id = $1 ORDER BY number",
+    )
+    .bind(polygon_id)
+    .fetch_all(pool)
+    .await
+    .map(|rows| rows.into_iter().map(|r| Point { lat: r.lat, lng: r.lng }).collect())
 }
 
 pub async fn insert_polygon(conn: &mut PgConnection) -> Result<Uuid, sqlx::Error> {

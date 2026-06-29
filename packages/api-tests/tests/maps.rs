@@ -1,7 +1,8 @@
 use api::{
-    endpoints::maps::{CreateMapRequest, ListMapsResponse, MapSummary},
+    endpoints::maps::{CreateMapRequest, GetMapResponse, ListMapsResponse, MapSummary},
     types::{area::Polygon, map_size::MapSize, Point},
 };
+use uuid::Uuid;
 
 #[tokio::test]
 async fn list_maps_empty_db_returns_ok() {
@@ -121,4 +122,50 @@ async fn created_map_appears_in_list() {
     let found = list.maps.iter().find(|m| m.id == created.id).expect("Created map missing from list");
     assert_eq!(found.name, "Södermalm");
     assert_eq!(found.size, MapSize::Large);
+}
+
+#[tokio::test]
+async fn get_map_returns_map_with_boundary() {
+    let server = api_tests::spawn_test_server().await;
+
+    let vertices = vec![
+        Point { lat: 59.330, lng: 18.065 },
+        Point { lat: 59.335, lng: 18.065 },
+        Point { lat: 59.330, lng: 18.075 },
+    ];
+    let seeded = api_tests::seed::seed_map_with_boundary(
+        &server.pool,
+        "Kungsholmen",
+        MapSize::Medium,
+        vertices.clone(),
+    )
+    .await;
+
+    let resp = reqwest::get(format!("{}/api/maps/{}", server.base_url, seeded.id))
+        .await
+        .expect("GET /api/maps/{id} failed");
+
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let body: GetMapResponse = resp.json().await.expect("Response is not valid GetMapResponse JSON");
+
+    assert_eq!(body.id, seeded.id);
+    assert_eq!(body.name, "Kungsholmen");
+    assert_eq!(body.size, MapSize::Medium);
+    assert_eq!(body.boundary.vertices.len(), vertices.len());
+    for (got, want) in body.boundary.vertices.iter().zip(vertices.iter()) {
+        assert!((got.lat - want.lat).abs() < 1e-9);
+        assert!((got.lng - want.lng).abs() < 1e-9);
+    }
+}
+
+#[tokio::test]
+async fn get_map_with_nonexistent_id_returns_error() {
+    let server = api_tests::spawn_test_server().await;
+
+    let resp = reqwest::get(format!("{}/api/maps/{}", server.base_url, Uuid::new_v4()))
+        .await
+        .expect("GET /api/maps/{id} failed");
+
+    assert_ne!(resp.status().as_u16(), 200);
 }
