@@ -119,7 +119,7 @@ INSERT INTO games (id, code, map_id, status, created_at, started_at, finished_at
     -- Active game on Gamla Stan
     (
         '70000001-0000-0000-0000-000000000000',
-        'GML001',
+        'dead0001',
         '60000001-0000-0000-0000-000000000000',
         'active',
         '2025-06-01 13:00:00+00',
@@ -129,7 +129,7 @@ INSERT INTO games (id, code, map_id, status, created_at, started_at, finished_at
     -- Finished game on Djurgården
     (
         '70000002-0000-0000-0000-000000000000',
-        'DJR002',
+        'beef0002',
         '60000002-0000-0000-0000-000000000000',
         'finished',
         '2025-06-02 15:00:00+00',
@@ -139,7 +139,7 @@ INSERT INTO games (id, code, map_id, status, created_at, started_at, finished_at
     -- Active game on Södermalm (large)
     (
         '70000003-0000-0000-0000-000000000000',
-        'SOD003',
+        'cafe0003',
         '60000003-0000-0000-0000-000000000000',
         'active',
         '2025-06-03 10:00:00+00',

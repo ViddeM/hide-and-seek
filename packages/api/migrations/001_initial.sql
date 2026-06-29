@@ -79,7 +79,7 @@ CREATE TYPE game_status AS ENUM ('lobby', 'active', 'finished');
 
 CREATE TABLE games (
     id          UUID DEFAULT gen_random_uuid(),
-    code        CHAR(6) NOT NULL UNIQUE,
+    code        CHAR(8) NOT NULL UNIQUE,
     map_id      UUID NOT NULL,
     status      game_status NOT NULL DEFAULT 'lobby',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

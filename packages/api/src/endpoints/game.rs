@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(feature = "server")]
-use {axum::Extension, sqlx::PgPool};
+use {axum::Extension, crate::services::game as game_service, sqlx::PgPool};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateGameRequest {
@@ -15,10 +15,14 @@ pub struct CreateGameRequest {
 pub struct CreateGameResponse {
     pub game_code: String,
     pub game_id: Uuid,
-    pub player_id: Uuid,
 }
 
 #[post("/api/games", pool: Extension<PgPool>)]
 pub async fn create_game(request: CreateGameRequest) -> Result<CreateGameResponse> {
-    todo!()
+    let result = game_service::create_game(&pool, request.map_id).await?;
+
+    Ok(CreateGameResponse {
+        game_code: result.game_code.to_string(),
+        game_id: result.game_id,
+    })
 }
