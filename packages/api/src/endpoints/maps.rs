@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::map_size::MapSize;
+use crate::types::{Coordinate, area::Polygon, map_size::MapSize};
 
 #[cfg(feature = "server")]
 use {
@@ -40,4 +40,16 @@ pub async fn list_maps() -> Result<ListMapsResponse> {
     Ok(ListMapsResponse {
         maps: maps.into_iter().map(|m| m.into()).collect(),
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateMapRequest {
+    pub name: String,
+    pub size: MapSize,
+    pub bounds: Polygon,
+}
+
+#[post("/api/maps", pool: Extension<PgPool>)]
+pub async fn create_map(request: CreateMapRequest) -> Result<MapSummary> {
+    todo!()
 }
