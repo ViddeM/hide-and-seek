@@ -12,7 +12,7 @@ use crate::BoundaryMapEditor;
 
 #[component]
 pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
-    let maps = use_resource(api::endpoints::maps::list_maps);
+    let mut maps = use_resource(api::endpoints::maps::list_maps);
 
     // Game-creation form state
     let mut host_name = use_signal(String::new);
@@ -102,6 +102,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                     new_map_name.set(String::new());
                     boundary.write().clear();
                     new_map_size.set(MapSize::Medium);
+                    maps.restart();
                 }
                 Err(e) => {
                     create_loading.set(false);
