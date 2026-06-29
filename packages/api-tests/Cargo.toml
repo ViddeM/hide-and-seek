@@ -1,0 +1,25 @@
+[package]
+name = "api-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# These are in [dependencies] (not dev) so that src/lib.rs can use them.
+# The whole package is test infrastructure, so the distinction is cosmetic.
+[dependencies]
+api = { path = "../api", features = ["server"] }
+dioxus = { workspace = true, features = ["fullstack", "server"] }
+axum = { workspace = true }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres"] }
+
+[dev-dependencies]
+# reqwest is only needed inside tests/, not in src/lib.rs
+reqwest = { version = "0.12", features = ["json"] }

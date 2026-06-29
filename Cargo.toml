@@ -4,6 +4,7 @@ members = [
     "packages/ui",
     "packages/web",
     "packages/api",
+    "packages/api-tests",
 ]
 
 [workspace.dependencies]
