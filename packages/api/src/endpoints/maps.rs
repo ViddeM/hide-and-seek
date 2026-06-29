@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{Coordinate, area::Polygon, map_size::MapSize};
+use crate::types::{area::Polygon, map_size::MapSize};
 
 #[cfg(feature = "server")]
 use {
@@ -51,5 +51,7 @@ pub struct CreateMapRequest {
 
 #[post("/api/maps", pool: Extension<PgPool>)]
 pub async fn create_map(request: CreateMapRequest) -> Result<MapSummary> {
-    todo!()
+    let map = map_service::create_map(&pool, request.name, request.size, request.bounds).await?;
+
+    Ok(map.into())
 }

@@ -12,8 +12,8 @@
 // mod map_view;
 // pub use map_view::MapView;
 
-// mod map_editor;
-// pub use map_editor::BoundaryMapEditor;
+mod map_editor;
+pub use map_editor::BoundaryMapEditor;
 
 // mod radar_explorer;
 // pub use radar_explorer::RadarExplorer;

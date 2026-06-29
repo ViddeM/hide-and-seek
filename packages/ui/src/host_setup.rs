@@ -1,18 +1,33 @@
-use api::endpoints::{
-    game::{CreateGameRequest, CreateGameResponse},
-    maps::MapSummary,
+use api::{
+    endpoints::{
+        game::{CreateGameRequest, CreateGameResponse},
+        maps::{CreateMapRequest, MapSummary},
+    },
+    types::{Point, area::Polygon, map_size::MapSize},
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
+
+use crate::BoundaryMapEditor;
 
 #[component]
 pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
     let maps = use_resource(api::endpoints::maps::list_maps);
 
+    // Game-creation form state
     let mut host_name = use_signal(String::new);
     let mut selected_map = use_signal(|| None::<Uuid>);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
+
+    // Map-creation form state
+    let mut new_map_name = use_signal(String::new);
+    let mut new_map_size = use_signal(|| MapSize::Medium);
+    let mut boundary = use_signal(Vec::<Point>::new);
+    let mut create_error = use_signal(|| None::<String>);
+    let mut create_loading = use_signal(|| false);
+
+    let mut show_create_map = use_signal(|| false);
 
     let submit_game = move |evt: Event<FormData>| {
         evt.prevent_default();
@@ -47,6 +62,50 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                 Err(e) => {
                     loading.set(false);
                     error.set(Some(e.to_string()));
+                }
+            }
+        });
+    };
+
+    let submit_create_map = move |_| {
+        if *create_loading.read() {
+            return;
+        }
+        let name_val = new_map_name.read().trim().to_string();
+        if name_val.is_empty() {
+            create_error.set(Some("Map name is required".to_string()));
+            return;
+        }
+        let boundary_pts = boundary.read().clone();
+        if boundary_pts.len() < 3 {
+            create_error.set(Some("Place at least 3 waypoints on the map".to_string()));
+            return;
+        }
+
+        create_error.set(None);
+        create_loading.set(true);
+        let size = *new_map_size.read();
+
+        spawn(async move {
+            let req = CreateMapRequest {
+                name: name_val,
+                size,
+                bounds: Polygon {
+                    vertices: boundary_pts,
+                },
+            };
+            match api::endpoints::maps::create_map(req).await {
+                Ok(map) => {
+                    create_loading.set(false);
+                    selected_map.set(Some(map.id));
+                    show_create_map.set(false);
+                    new_map_name.set(String::new());
+                    boundary.write().clear();
+                    new_map_size.set(MapSize::Medium);
+                }
+                Err(e) => {
+                    create_loading.set(false);
+                    create_error.set(Some(e.to_string()));
                 }
             }
         });
@@ -100,6 +159,76 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                     }
                 }
             }
+
+            // Toggle for the inline map-creation form
+                div { class: "create-map-toggle-row",
+                    button {
+                        r#type: "button",
+                        class: "btn btn--ghost create-map-toggle",
+                        onclick: move |_| {
+                            let v = *show_create_map.read();
+                            show_create_map.set(!v);
+                        },
+                        if *show_create_map.read() {
+                            "✕ Cancel"
+                        } else {
+                            "+ Create New Map"
+                        }
+                    }
+                }
+
+                // Inline map-creation form (div, not a nested <form>)
+                if *show_create_map.read() {
+                    div { class: "create-map-form",
+                        h3 { class: "create-map-form__title", "New Map" }
+
+                        label { r#for: "map-name", "Map Name" }
+                        input {
+                            id: "map-name",
+                            r#type: "text",
+                            placeholder: "e.g. City Centre",
+                            oninput: move |e| new_map_name.set(e.value()),
+                            value: new_map_name.read().clone(),
+                        }
+
+                        label { r#for: "map-size", "Size" }
+                        select {
+                            id: "map-size",
+                            onchange: move |e| {
+                                new_map_size
+                                    .set(
+                                        match e.value().as_str() {
+                                            "small" => MapSize::Small,
+                                            "large" => MapSize::Large,
+                                            _ => MapSize::Medium,
+                                        },
+                                    );
+                            },
+                            option { value: "small", "Small" }
+                            option { value: "medium", selected: true, "Medium" }
+                            option { value: "large", "Large" }
+                        }
+
+                        BoundaryMapEditor { boundary }
+
+                        if let Some(msg) = create_error.read().as_ref() {
+                            p { class: "form-error", "{msg}" }
+                        }
+
+                        button {
+                            r#type: "button",
+                            class: "btn btn--secondary",
+                            disabled: *create_loading.read(),
+                            onclick: submit_create_map,
+                            if *create_loading.read() {
+                                "Saving…"
+                            } else {
+                                "Save Map"
+                            }
+                        }
+                    }
+                }
+
         }
     }
 

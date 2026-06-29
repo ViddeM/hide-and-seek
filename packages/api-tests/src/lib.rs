@@ -1,6 +1,7 @@
 pub mod seed;
 
 use api::endpoints::game::CreateGameRequest;
+use api::endpoints::maps::CreateMapRequest;
 use dioxus::prelude::*;
 use testcontainers::{ContainerAsync, ImageExt, runners::AsyncRunner};
 use testcontainers_modules::postgres::Postgres;
@@ -55,5 +56,9 @@ pub async fn spawn_test_server() -> TestServer {
 /// The #[post] macro wraps client-side arguments in a struct keyed by the
 /// argument name, so the wire format is `{"request": {…}}` not the struct itself.
 pub fn game_body(request: CreateGameRequest) -> serde_json::Value {
+    serde_json::json!({ "request": request })
+}
+
+pub fn map_body(request: CreateMapRequest) -> serde_json::Value {
     serde_json::json!({ "request": request })
 }

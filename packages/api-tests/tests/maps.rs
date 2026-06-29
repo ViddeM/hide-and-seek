@@ -1,4 +1,7 @@
-use api::{endpoints::maps::ListMapsResponse, types::map_size::MapSize};
+use api::{
+    endpoints::maps::{CreateMapRequest, ListMapsResponse, MapSummary},
+    types::{area::Polygon, map_size::MapSize, Point},
+};
 
 #[tokio::test]
 async fn list_maps_empty_db_returns_ok() {
@@ -45,4 +48,77 @@ async fn list_maps_returns_seeded_maps() {
     let found2 = body.maps.iter().find(|m| m.id == m2.id).expect("Map 2 missing from response");
     assert_eq!(found2.name, m2.name);
     assert_eq!(found2.size, m2.size);
+}
+
+fn triangle_bounds() -> Polygon {
+    Polygon {
+        vertices: vec![
+            Point { lat: 59.330, lng: 18.065 },
+            Point { lat: 59.335, lng: 18.065 },
+            Point { lat: 59.330, lng: 18.075 },
+        ],
+    }
+}
+
+#[tokio::test]
+async fn create_map_returns_map_summary() {
+    let server = api_tests::spawn_test_server().await;
+
+    let request = CreateMapRequest {
+        name: "Gamla Stan".to_string(),
+        size: MapSize::Small,
+        bounds: triangle_bounds(),
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/maps", server.base_url))
+        .json(&api_tests::map_body(request))
+        .send()
+        .await
+        .expect("POST /api/maps failed");
+
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let body: MapSummary = resp
+        .json()
+        .await
+        .expect("Response is not valid MapSummary JSON");
+
+    assert_eq!(body.name, "Gamla Stan");
+    assert_eq!(body.size, MapSize::Small);
+    assert!(!body.id.is_nil());
+}
+
+#[tokio::test]
+async fn created_map_appears_in_list() {
+    let server = api_tests::spawn_test_server().await;
+
+    let request = CreateMapRequest {
+        name: "Södermalm".to_string(),
+        size: MapSize::Large,
+        bounds: triangle_bounds(),
+    };
+
+    let client = reqwest::Client::new();
+    let create_resp = client
+        .post(format!("{}/api/maps", server.base_url))
+        .json(&api_tests::map_body(request))
+        .send()
+        .await
+        .expect("POST /api/maps failed");
+
+    assert_eq!(create_resp.status().as_u16(), 200);
+    let created: MapSummary = create_resp.json().await.expect("Not valid MapSummary JSON");
+
+    let list_resp = reqwest::get(format!("{}/api/maps", server.base_url))
+        .await
+        .expect("GET /api/maps failed");
+
+    assert_eq!(list_resp.status().as_u16(), 200);
+    let list: ListMapsResponse = list_resp.json().await.expect("Not valid ListMapsResponse JSON");
+
+    let found = list.maps.iter().find(|m| m.id == created.id).expect("Created map missing from list");
+    assert_eq!(found.name, "Södermalm");
+    assert_eq!(found.size, MapSize::Large);
 }

@@ -1,10 +1,11 @@
+use api::types::Point;
 use dioxus::prelude::*;
 
 const LEAFLET_CSS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
 #[component]
-pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
+pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>) -> Element {
     // One-time init: create the Leaflet map and start the click-to-Dioxus bridge
     use_effect(move || {
         let init_js = r#"
@@ -31,7 +32,8 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
 
         // Long-running task: receive click events from JS
         spawn(async move {
-            let mut eval = document::eval(r#"
+            let mut eval = document::eval(
+                r#"
                 (async function() {
                     var tries = 0;
                     while (!window._bndEditor && tries++ < 100) {
@@ -42,10 +44,16 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
                         dioxus.send([e.latlng.lat, e.latlng.lng]);
                     });
                 })()
-            "#);
+            "#,
+            );
             loop {
                 match eval.recv::<[f64; 2]>().await {
-                    Ok(pt) => { boundary.write().push(pt); }
+                    Ok(pt) => {
+                        boundary.write().push(Point {
+                            lat: pt[0],
+                            lng: pt[1],
+                        });
+                    }
                     Err(_) => break,
                 }
             }
@@ -56,7 +64,8 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
     use_effect(move || {
         let pts = boundary.read().clone();
         let pts_json = serde_json::to_string(&pts).unwrap_or_default();
-        let redraw_js = format!(r#"
+        let redraw_js = format!(
+            r#"
             (function() {{
                 var m = window._bndEditor;
                 if (!m) return;
@@ -78,7 +87,8 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
                     window._bndPoly = L.polyline(pts, {{color: '#6c63ff', weight: 2, dashArray: '6'}}).addTo(m);
                 }}
             }})()
-        "#);
+        "#
+        );
         let _ = document::eval(&redraw_js);
     });
 
@@ -105,8 +115,8 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<[f64; 2]>>) -> Element {
                 ul { class: "waypoints-list",
                     for (i, pt) in pts_snapshot.iter().enumerate() {
                         {
-                            let lat = pt[0];
-                            let lng = pt[1];
+                            let lat = pt.lat;
+                            let lng = pt.lng;
                             rsx! {
                                 li { class: "waypoint-item", key: "{i}",
                                     span { class: "waypoint-item__num", "{i + 1}" }
