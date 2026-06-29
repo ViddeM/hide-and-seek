@@ -1,22 +1,104 @@
+use api::endpoints::{
+    game::{CreateGameRequest, CreateGameResponse},
+    maps::MapSummary,
+};
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 #[component]
-pub fn HostSetupForm(/* on_created: EventHandler<CreateGameResponse> */) -> Element {
+pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
     let maps = use_resource(api::endpoints::maps::list_maps);
 
-    rsx! {
-        div {
-            if let Some(response) = &*maps.read() {
-                match response {
-                    Ok(maps) => rsx! {
-                        p { "Loaded {maps.maps.len()} maps" }
-                    },
-                    Err(e) => rsx! {
-                        p { class: "form-error", "Failed to load maps: {e}" }
-                    },
+    let mut host_name = use_signal(String::new);
+    let mut selected_map = use_signal(|| None::<Uuid>);
+    let mut error = use_signal(|| None::<String>);
+    let mut loading = use_signal(|| false);
+
+    let submit_game = move |evt: Event<FormData>| {
+        evt.prevent_default();
+        if *loading.read() {
+            return;
+        }
+        let name_val = host_name.read().trim().to_string();
+        let map_val = *selected_map.read();
+
+        if name_val.is_empty() {
+            error.set(Some("Enter your name".to_string()));
+            return;
+        }
+        let Some(map_id) = map_val else {
+            error.set(Some("Select a map".to_string()));
+            return;
+        };
+        error.set(None);
+        loading.set(true);
+
+        spawn(async move {
+            match api::endpoints::game::create_game(CreateGameRequest {
+                map_id,
+                host_display_name: name_val,
+            })
+            .await
+            {
+                Ok(resp) => {
+                    loading.set(false);
+                    on_created.call(resp);
                 }
-            } else {
-                p { "Loading..." }
+                Err(e) => {
+                    loading.set(false);
+                    error.set(Some(e.to_string()));
+                }
+            }
+        });
+    };
+
+    rsx! {
+        main { class: "host-setup",
+            h1 { "Host a New Game" }
+
+            form { onsubmit: submit_game,
+                label { r#for: "host-name", "Your Name" }
+                input {
+                    id: "host-name",
+                    r#type: "text",
+                    placeholder: "Host",
+                    oninput: move |e| host_name.set(e.value()),
+                    value: host_name.read().clone(),
+                }
+
+                label { "Select Map" }
+
+                match &*maps.read() {
+                    None => rsx! {
+                        p { class: "map-loading", "Loading maps…" }
+                    },
+                    Some(Err(e)) => {
+                        rsx! {
+                            p { class: "form-error", "Failed to load maps: {e}" }
+                        }
+                    }
+                    Some(Ok(map_list)) => {
+                        // let extra = new_maps.read().clone();
+                        let extra = vec![];
+                        let all_empty = map_list.maps.is_empty() && extra.is_empty();
+                        rsx! {
+                            if all_empty {
+                                p { class: "map-empty-hint", "No maps yet — use the form below to create your first one." }
+                            }
+                            ul { class: "map-list",
+                                for map in map_list.maps.iter().chain(extra.iter()) {
+                                    MapOption {
+                                        key: "{map.id}",
+                                        map: map.clone(),
+                                        // selected: *selected_map.read() == Some(map.id),
+                                        selected: true,
+                                        on_select: move |id| selected_map.set(Some(id)),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -284,20 +366,16 @@ pub fn HostSetupForm(/* on_created: EventHandler<CreateGameResponse> */) -> Elem
     // }
 }
 
-// #[component]
-// fn MapOption(map: MapSummary, selected: bool, on_select: EventHandler<Uuid>) -> Element {
-//     let id = map.id;
-//     let size_str = match map.size {
-//         MapSize::Small => "Small",
-//         MapSize::Medium => "Medium",
-//         MapSize::Large => "Large",
-//     };
-//     rsx! {
-//         li {
-//             class: if selected { "map-option map-option--selected" } else { "map-option" },
-//             onclick: move |_| on_select.call(id),
-//             strong { "{map.name}" }
-//             span { class: "map-option__size", " ({size_str})" }
-//         }
-//     }
-// }
+#[component]
+fn MapOption(map: MapSummary, selected: bool, on_select: EventHandler<Uuid>) -> Element {
+    let id = map.id;
+    let size_str = map.size.to_string();
+    rsx! {
+        li {
+            class: if selected { "map-option map-option--selected" } else { "map-option" },
+            onclick: move |_| on_select.call(id),
+            strong { "{map.name}" }
+            span { class: "map-option__size", " ({size_str})" }
+        }
+    }
+}
