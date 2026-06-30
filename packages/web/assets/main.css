@@ -48,7 +48,7 @@ a:hover { text-decoration: underline; }
   text-align: center;
   white-space: nowrap;
 }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled { opacity: 0.38; filter: saturate(0.15); cursor: not-allowed; }
 .btn:active:not(:disabled) { transform: scale(0.97); }
 
 .btn--primary  { background: var(--color-primary); color: #fff; }

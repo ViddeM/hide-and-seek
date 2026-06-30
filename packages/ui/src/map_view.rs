@@ -58,8 +58,8 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                 if (window._hideseekMap) return;
                 var pts = {pts_json};
                 window._hideseekBoundary = pts;
-                var lats = pts.map(function(p){{return p[0];}});
-                var lngs = pts.map(function(p){{return p[1];}});
+                var lats = pts.map(function(p){{return p.lat;}});
+                var lngs = pts.map(function(p){{return p.lng;}});
                 var swLat = Math.min.apply(null, lats), swLng = Math.min.apply(null, lngs);
                 var neLat = Math.max.apply(null, lats), neLng = Math.max.apply(null, lngs);
                 var map = L.map('leaflet-map').fitBounds([[swLat, swLng],[neLat, neLng]]);
