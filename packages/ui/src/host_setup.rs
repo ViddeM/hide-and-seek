@@ -161,70 +161,69 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
             }
 
             // Toggle for the inline map-creation form
-                div { class: "create-map-toggle-row",
-                    button {
-                        r#type: "button",
-                        class: "btn btn--ghost create-map-toggle",
-                        onclick: move |_| {
-                            let v = *show_create_map.read();
-                            show_create_map.set(!v);
-                        },
-                        if *show_create_map.read() {
-                            "✕ Cancel"
-                        } else {
-                            "+ Create New Map"
-                        }
+            div { class: "create-map-toggle-row",
+                button {
+                    r#type: "button",
+                    class: "btn btn--ghost create-map-toggle",
+                    onclick: move |_| {
+                        let v = *show_create_map.read();
+                        show_create_map.set(!v);
+                    },
+                    if *show_create_map.read() {
+                        "✕ Cancel"
+                    } else {
+                        "+ Create New Map"
                     }
                 }
+            }
 
-                // Inline map-creation form (div, not a nested <form>)
-                if *show_create_map.read() {
-                    div { class: "create-map-form",
-                        h3 { class: "create-map-form__title", "New Map" }
+            // Inline map-creation form (div, not a nested <form>)
+            if *show_create_map.read() {
+                div { class: "create-map-form",
+                    h3 { class: "create-map-form__title", "New Map" }
 
-                        label { r#for: "map-name", "Map Name" }
-                        input {
-                            id: "map-name",
-                            r#type: "text",
-                            placeholder: "e.g. City Centre",
-                            oninput: move |e| new_map_name.set(e.value()),
-                            value: new_map_name.read().clone(),
-                        }
+                    label { r#for: "map-name", "Map Name" }
+                    input {
+                        id: "map-name",
+                        r#type: "text",
+                        placeholder: "e.g. City Centre",
+                        oninput: move |e| new_map_name.set(e.value()),
+                        value: new_map_name.read().clone(),
+                    }
 
-                        label { r#for: "map-size", "Size" }
-                        select {
-                            id: "map-size",
-                            onchange: move |e| {
-                                new_map_size
-                                    .set(
-                                        match e.value().as_str() {
-                                            "small" => MapSize::Small,
-                                            "large" => MapSize::Large,
-                                            _ => MapSize::Medium,
-                                        },
-                                    );
-                            },
-                            option { value: "small", "Small" }
-                            option { value: "medium", selected: true, "Medium" }
-                            option { value: "large", "Large" }
-                        }
+                    label { r#for: "map-size", "Size" }
+                    select {
+                        id: "map-size",
+                        onchange: move |e| {
+                            new_map_size
+                                .set(
+                                    match e.value().as_str() {
+                                        "small" => MapSize::Small,
+                                        "large" => MapSize::Large,
+                                        _ => MapSize::Medium,
+                                    },
+                                );
+                        },
+                        option { value: "small", "Small" }
+                        option { value: "medium", selected: true, "Medium" }
+                        option { value: "large", "Large" }
+                    }
 
-                        BoundaryMapEditor { boundary }
+                    BoundaryMapEditor { boundary }
 
-                        if let Some(msg) = create_error.read().as_ref() {
-                            p { class: "form-error", "{msg}" }
-                        }
+                    if let Some(msg) = create_error.read().as_ref() {
+                        p { class: "form-error", "{msg}" }
+                    }
 
-                        button {
-                            r#type: "button",
-                            class: "btn btn--secondary",
-                            disabled: *create_loading.read(),
-                            onclick: submit_create_map,
-                            if *create_loading.read() {
-                                "Saving…"
-                            } else {
-                                "Save Map"
-                            }
+                    button {
+                        r#type: "button",
+                        class: "btn btn--secondary",
+                        disabled: *create_loading.read(),
+                        onclick: submit_create_map,
+                        if *create_loading.read() {
+                            "Saving…"
+                        } else {
+                            "Save Map"
                         }
                     }
                 }
@@ -244,6 +243,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                         "Create Game"
                     }
                 }
+            }
         }
     }
 
