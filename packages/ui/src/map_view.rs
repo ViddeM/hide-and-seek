@@ -26,14 +26,8 @@ function _circleRing(lat,lng,r,n){
 pub const RESTORE_ZONES_FN: &str = r#"
 function _restoreZones(){
     var z=window._hideseekZones||{};
-    var meta=window._hideseekZoneMeta||{};
     Object.keys(z).forEach(function(id){
-        var m=meta[id];if(!m)return;
-        if(m.eo){
-            z[id].setStyle({fillColor:'#1e1e50',fillOpacity:0.45,stroke:false,weight:0});
-        }else{
-            z[id].setStyle({color:'#1e1e50',fillColor:'#1e1e50',fillOpacity:0.55,weight:2,stroke:true});
-        }
+        z[id].setStyle({fillColor:'#1e1e50',fillOpacity:1,stroke:false});
     });
 }
 "#;
@@ -85,6 +79,9 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                 window._hideseekMap = map;
                 window._hideseekZones = {{}};
                 window._hideseekZoneMeta = {{}};
+                var zonesPane = map.createPane('zonesPane');
+                zonesPane.style.isolation = 'isolate';
+                zonesPane.style.opacity = '0.55';
             }})();
         "#
         );
@@ -98,8 +95,8 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
         let zones_snap = zones.read().clone();
 
         let mut js = String::new();
-        js.push_str("(function(){");
-        js.push_str("var m=window._hideseekMap;if(!m)return;");
+        js.push_str("(function sync(){");
+        js.push_str("var m=window._hideseekMap;if(!m){setTimeout(sync,100);return;}");
         js.push_str("var boundary=window._hideseekBoundary;");
         js.push_str(CIRCLE_RING_FN);
         js.push_str("var z=window._hideseekZones||{};");
@@ -134,8 +131,9 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                     "if(!z['{id}']&&boundary&&boundary.length>0){{\
                         var ring=_circleRing({lat},{lng},{r},64);\
                         var c=L.polygon([boundary,ring],{{\
-                            fillColor:'#1e1e50',fillOpacity:0.45,\
-                            stroke:false,interactive:false,className:'zone-excluded'\
+                            fillColor:'#1e1e50',fillOpacity:1,\
+                            stroke:false,interactive:false,className:'zone-excluded',\
+                            pane:'zonesPane'\
                         }}).addTo(m);"
                 ));
             } else {
@@ -143,8 +141,9 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                 js.push_str(&format!(
                     "if(!z['{id}']){{\
                         var c=L.circle([{lat},{lng}],{{\
-                            radius:{r},color:'#1e1e50',fillColor:'#1e1e50',\
-                            fillOpacity:0.55,weight:2,className:'zone-excluded'\
+                            radius:{r},fillColor:'#1e1e50',\
+                            fillOpacity:1,stroke:false,className:'zone-excluded',\
+                            pane:'zonesPane'\
                         }}).addTo(m);"
                 ));
             }
@@ -182,7 +181,7 @@ pub fn js_highlight_zone(zone_id: Option<Uuid>) -> String {
             var tid='{id}';
             var z=window._hideseekZones||{{}};
             if(tid&&z[tid]){{
-                z[tid].setStyle({{color:'#e67e22',fillColor:'#e67e22',fillOpacity:0.70,weight:3,stroke:true}});
+                z[tid].setStyle({{color:'#e67e22',fillColor:'#e67e22',fillOpacity:1,weight:3,stroke:true}});
                 z[tid].bringToFront();
             }}
         }})()"#,

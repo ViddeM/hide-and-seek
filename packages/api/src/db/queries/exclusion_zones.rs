@@ -17,7 +17,7 @@ pub struct ExclusionZoneRow {
     pub end_lng: Option<f64>,
     pub center_lat: Option<f64>,
     pub center_lng: Option<f64>,
-    pub radius_meters: Option<i64>,
+    pub radius_meters: Option<i32>,
 }
 
 pub async fn get_zones_for_game(
