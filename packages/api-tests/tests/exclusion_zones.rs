@@ -71,7 +71,7 @@ async fn create_exclusion_zone_circle_returns_zone() {
     let game = api_tests::seed::seed_game(&server.pool, map_id).await;
 
     let request = AddZoneRequest {
-        label: "Downtown circle".to_string(),
+        label: Some("Downtown circle".to_string()),
         exclude_outside: false,
         area: Area::Circle(Circle {
             center: Point { lat: 59.330, lng: 18.065 },
@@ -98,7 +98,7 @@ async fn create_exclusion_zone_circle_returns_zone() {
         .expect("Response is not valid ExclusionZoneResponse JSON");
 
     assert!(!body.id.is_nil());
-    assert_eq!(body.label, "Downtown circle");
+    assert_eq!(body.label, Some("Downtown circle".to_string()));
     assert!(!body.exclude_outside);
     assert!(matches!(body.area, Area::Circle(_)));
 
@@ -116,7 +116,7 @@ async fn create_exclusion_zone_line_returns_zone() {
     let game = api_tests::seed::seed_game(&server.pool, map_id).await;
 
     let request = AddZoneRequest {
-        label: "Border line".to_string(),
+        label: Some("Border line".to_string()),
         exclude_outside: true,
         area: Area::Line(Line {
             start: Point { lat: 59.330, lng: 18.060 },
@@ -143,7 +143,7 @@ async fn create_exclusion_zone_line_returns_zone() {
         .expect("Response is not valid ExclusionZoneResponse JSON");
 
     assert!(!body.id.is_nil());
-    assert_eq!(body.label, "Border line");
+    assert_eq!(body.label, Some("Border line".to_string()));
     assert!(body.exclude_outside);
     assert!(matches!(body.area, Area::Line(_)));
 
@@ -166,7 +166,7 @@ async fn create_exclusion_zone_polygon_returns_zone() {
     ];
 
     let request = AddZoneRequest {
-        label: "Polygon zone".to_string(),
+        label: Some("Polygon zone".to_string()),
         exclude_outside: false,
         area: Area::Polygon(Polygon { vertices: vertices.clone() }),
     };
@@ -190,7 +190,7 @@ async fn create_exclusion_zone_polygon_returns_zone() {
         .expect("Response is not valid ExclusionZoneResponse JSON");
 
     assert!(!body.id.is_nil());
-    assert_eq!(body.label, "Polygon zone");
+    assert_eq!(body.label, Some("Polygon zone".to_string()));
     assert!(matches!(body.area, Area::Polygon(_)));
 
     if let Area::Polygon(p) = body.area {
@@ -209,7 +209,7 @@ async fn created_zone_appears_in_list() {
     let game = api_tests::seed::seed_game(&server.pool, map_id).await;
 
     let request = AddZoneRequest {
-        label: "Test zone".to_string(),
+        label: Some("Test zone".to_string()),
         exclude_outside: false,
         area: Area::Circle(Circle {
             center: Point { lat: 59.330, lng: 18.065 },
@@ -242,7 +242,7 @@ async fn created_zone_appears_in_list() {
     let list: Vec<ExclusionZoneResponse> = list_resp.json().await.expect("Not valid JSON");
 
     let found = list.iter().find(|z| z.id == created.id).expect("Created zone missing from list");
-    assert_eq!(found.label, "Test zone");
+    assert_eq!(found.label, Some("Test zone".to_string()));
 }
 
 #[tokio::test]

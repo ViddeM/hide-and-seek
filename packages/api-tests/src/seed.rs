@@ -98,7 +98,7 @@ pub async fn seed_game(pool: &PgPool, map_id: Uuid) -> SeededGame {
 pub struct SeededExclusionZone {
     pub id: Uuid,
     pub exclude_outside: bool,
-    pub label: String,
+    pub label: Option<String>,
     pub area: Area,
 }
 
@@ -123,7 +123,7 @@ pub async fn seed_exclusion_zone_circle(pool: &PgPool, game_id: Uuid) -> SeededE
         .await
         .expect("Failed to seed area");
 
-    let label = "Circle zone".to_string();
+    let label = Some("Circle zone".to_string());
     let exclude_outside = false;
 
     let id: Uuid = sqlx::query_scalar(
@@ -179,7 +179,7 @@ pub async fn seed_exclusion_zone_polygon(pool: &PgPool, game_id: Uuid) -> Seeded
         .await
         .expect("Failed to seed area");
 
-    let label = "Polygon zone".to_string();
+    let label = Some("Polygon zone".to_string());
     let exclude_outside = true;
 
     let id: Uuid = sqlx::query_scalar(
