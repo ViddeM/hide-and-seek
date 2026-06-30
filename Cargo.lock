@@ -5153,6 +5153,7 @@ dependencies = [
  "dotenvy",
  "tokio",
  "ui",
+ "uuid",
 ]
 
 [[package]]

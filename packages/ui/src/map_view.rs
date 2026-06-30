@@ -1,11 +1,12 @@
-use api::models::ExclusionZone;
+use api::{
+    endpoints::exclusion_zone::ExclusionZoneResponse,
+    types::area::{Area, Polygon},
+};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-const LEAFLET_CSS: &str =
-    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-const LEAFLET_JS: &str =
-    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+const LEAFLET_CSS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_JS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
 /// Converts a circle (lat/lng centre, radius in metres) to an N-point lat/lng ring.
 const CIRCLE_RING_FN: &str = r#"
@@ -38,15 +39,16 @@ function _restoreZones(){
 "#;
 
 #[component]
-pub fn MapView(
-    boundary: Vec<[f64; 2]>,
-    zones: Signal<Vec<ExclusionZone>>,
-) -> Element {
+pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> Element {
     // Initialise Leaflet after first render — async-poll for CDN load
     use_effect(move || {
-        if boundary.is_empty() { return; }
-        let pts_json = serde_json::to_string(&boundary).unwrap_or_default();
-        let init_js = format!(r#"
+        if boundary.vertices.is_empty() {
+            return;
+        }
+
+        let pts_json = serde_json::to_string(&boundary.vertices).unwrap_or_default();
+        let init_js = format!(
+            r#"
             (async function() {{
                 var tries = 0;
                 while (typeof L === 'undefined' && tries++ < 100) {{
@@ -84,7 +86,8 @@ pub fn MapView(
                 window._hideseekZones = {{}};
                 window._hideseekZoneMeta = {{}};
             }})();
-        "#);
+        "#
+        );
         let _ = document::eval(&init_js);
     });
 
@@ -114,9 +117,14 @@ pub fn MapView(
         for zone in &zones_snap {
             let label = zone.label.as_deref().unwrap_or("").replace('\'', "\\'");
             let id = zone.id;
-            let lat = zone.center_lat;
-            let lng = zone.center_lng;
-            let r = zone.radius_m;
+
+            let Area::Circle(circle) = &zone.area else {
+                println!("Found non-circle area in MapView; skipping zone {}", id);
+                continue;
+            };
+            let lat = circle.center.lat;
+            let lng = circle.center.lng;
+            let r = circle.radius;
 
             if zone.exclude_outside {
                 // Yes zone: boundary polygon with this circle cut out as a hole.

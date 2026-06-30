@@ -1,4 +1,4 @@
-use api::types::{Point, game_code::GameCode, map_size::MapSize};
+use api::types::{Point, area::{Area, Circle, Polygon}, game_code::GameCode, map_size::MapSize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -93,4 +93,110 @@ pub async fn seed_game(pool: &PgPool, map_id: Uuid) -> SeededGame {
     .expect("Failed to seed game");
 
     SeededGame { id, code, map_id }
+}
+
+pub struct SeededExclusionZone {
+    pub id: Uuid,
+    pub exclude_outside: bool,
+    pub label: String,
+    pub area: Area,
+}
+
+pub async fn seed_exclusion_zone_circle(pool: &PgPool, game_id: Uuid) -> SeededExclusionZone {
+    let center_lat = 59.330_f64;
+    let center_lng = 18.065_f64;
+    let radius: i32 = 200;
+
+    let circle_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO circle (center_lat, center_lng, radius_meters) VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(center_lat)
+    .bind(center_lng)
+    .bind(radius)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to seed circle");
+
+    let area_id: Uuid = sqlx::query_scalar("INSERT INTO area (circle_id) VALUES ($1) RETURNING id")
+        .bind(circle_id)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to seed area");
+
+    let label = "Circle zone".to_string();
+    let exclude_outside = false;
+
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO exclusion_zones (game_id, area_id, exclude_outside, label) VALUES ($1, $2, $3, $4) RETURNING id",
+    )
+    .bind(game_id)
+    .bind(area_id)
+    .bind(exclude_outside)
+    .bind(&label)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to seed exclusion zone");
+
+    SeededExclusionZone {
+        id,
+        exclude_outside,
+        label,
+        area: Area::Circle(Circle {
+            center: Point { lat: center_lat, lng: center_lng },
+            radius: radius as f64,
+        }),
+    }
+}
+
+pub async fn seed_exclusion_zone_polygon(pool: &PgPool, game_id: Uuid) -> SeededExclusionZone {
+    let vertices = vec![
+        Point { lat: 59.330, lng: 18.065 },
+        Point { lat: 59.335, lng: 18.065 },
+        Point { lat: 59.330, lng: 18.075 },
+    ];
+
+    let polygon_id: Uuid = sqlx::query_scalar("INSERT INTO polygon DEFAULT VALUES RETURNING id")
+        .fetch_one(pool)
+        .await
+        .expect("Failed to seed polygon");
+
+    for (number, vertex) in vertices.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO polygon_point (number, polygon_id, lat, lng) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(number as i32)
+        .bind(polygon_id)
+        .bind(vertex.lat)
+        .bind(vertex.lng)
+        .execute(pool)
+        .await
+        .expect("Failed to seed polygon point");
+    }
+
+    let area_id: Uuid = sqlx::query_scalar("INSERT INTO area (polygon_id) VALUES ($1) RETURNING id")
+        .bind(polygon_id)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to seed area");
+
+    let label = "Polygon zone".to_string();
+    let exclude_outside = true;
+
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO exclusion_zones (game_id, area_id, exclude_outside, label) VALUES ($1, $2, $3, $4) RETURNING id",
+    )
+    .bind(game_id)
+    .bind(area_id)
+    .bind(exclude_outside)
+    .bind(&label)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to seed exclusion zone");
+
+    SeededExclusionZone {
+        id,
+        exclude_outside,
+        label,
+        area: Area::Polygon(Polygon { vertices }),
+    }
 }

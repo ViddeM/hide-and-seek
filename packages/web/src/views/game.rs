@@ -1,16 +1,16 @@
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 #[component]
-pub fn GameView(game_id: String) -> Element {
+pub fn GameView(game_id: Uuid) -> Element {
     let data = use_resource(move || {
-        let _gid = game_id.clone();
         async move {
-            let session = api::auth::get_session()
-                .await?
-                .ok_or_else(|| ServerFnError::new("Not authenticated"))?;
-            let state = api::game::get_game_state(session.game_id).await?;
-            let map = api::maps::get_map(state.map_id).await?;
-            Ok::<_, ServerFnError>((session, map))
+            // let session = api::auth::get_session()
+            //     .await?
+            //     .ok_or_else(|| ServerFnError::new("Not authenticated"))?;
+            let game = api::endpoints::game::get_game(game_id).await?;
+            let map = api::endpoints::maps::get_map(game.map_id).await?;
+            Ok::<_, ServerFnError>((game, map))
         }
     });
 
@@ -28,10 +28,9 @@ pub fn GameView(game_id: String) -> Element {
                 }
             }
         }
-        Some(Ok((session, map))) => rsx! {
+        Some(Ok((game, map))) => rsx! {
             ui::game_view::GameView {
-                game_id: session.game_id,
-                session: session.clone(),
+                game: game.clone(),
                 map: map.clone(),
             }
         },

@@ -25,3 +25,13 @@ pub enum Area {
     Line(Line),
     Polygon(Polygon),
 }
+
+impl Area {
+    pub fn display(&self) -> String {
+        match self {
+            Area::Circle(circle) => format!("Circle {}m radius", circle.radius),
+            Area::Line(line) => format!("Line of length {}m", line.start.distance_to(&line.end)),
+            Area::Polygon(polygon) => format!("Polygon with {} vertices", polygon.vertices.len()),
+        }
+    }
+}

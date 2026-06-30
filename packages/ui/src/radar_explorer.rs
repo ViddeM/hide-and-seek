@@ -1,5 +1,10 @@
-use api::models::{AddZoneRequest, ExclusionZone};
-use crate::map_view::js_highlight_zone;
+use api::{
+    endpoints::exclusion_zone::{AddZoneRequest, ExclusionZoneResponse},
+    types::{
+        Point,
+        area::{Area, Circle},
+    },
+};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -10,7 +15,7 @@ use uuid::Uuid;
 pub fn RadarExplorer(
     game_id: Uuid,
     is_seeker: bool,
-    on_zone_added: EventHandler<ExclusionZone>,
+    on_zone_added: EventHandler<ExclusionZoneResponse>,
 ) -> Element {
     let mut expanded = use_signal(|| false);
     let mut center: Signal<Option<[f64; 2]>> = use_signal(|| None);
@@ -21,8 +26,6 @@ pub fn RadarExplorer(
     let mut adding = use_signal(|| false);
     let mut error: Signal<Option<String>> = use_signal(|| None);
     let mut picking_center = use_signal(|| false);
-    let mut asked: Signal<Vec<ExclusionZone>> = use_signal(Vec::new);
-    let mut highlighted_id: Signal<Option<Uuid>> = use_signal(|| None);
 
     // Redraw preview whenever center, radius, or Yes/No changes
     use_effect(move || {
@@ -207,21 +210,17 @@ pub fn RadarExplorer(
                                     error.set(None);
                                     let label = if yes { "Radar: Yes" } else { "Radar: No" };
                                     let req = AddZoneRequest {
-                                        center_lat: lat,
-                                        center_lng: lng,
-                                        radius_m: r_m,
+                                        area: Area::Circle(Circle { center: Point { lat, lng }, radius: r_m as f64 }),
                                         exclude_outside: yes,
                                         label: Some(label.to_string()),
-                                        question_id: None,
                                     };
                                     spawn(async move {
-                                        match api::zones::add_exclusion_zone(game_id, req).await {
+                                        match api::endpoints::exclusion_zone::create_exclusion_zone(game_id, req).await {
                                             Ok(zone) => {
                                                 adding.set(false);
                                                 // Reset only center so the next question can
                                                 // reuse the same radius / Yes-No setting
                                                 center.set(None);
-                                                asked.write().push(zone.clone());
                                                 on_zone_added.call(zone);
                                             }
                                             Err(e) => {
@@ -238,57 +237,6 @@ pub fn RadarExplorer(
 
                     if let Some(msg) = error.read().as_ref() {
                         p { class: "form-error", "{msg}" }
-                    }
-
-                    // ── Asked Questions list ───────────────────────────────────
-                    if !asked.read().is_empty() {
-                        div { class: "asked-questions",
-                            h4 { class: "asked-questions__title", "Asked Questions" }
-
-                            for question in asked.read().clone() {
-                                {
-                                    let qid = question.id;
-                                    let is_hl = *highlighted_id.read() == Some(qid);
-                                    let radius_km_val = question.radius_m as f64 / 1000.0;
-                                    let lat = question.center_lat;
-                                    let lng = question.center_lng;
-                                    let yes = question.exclude_outside;
-
-                                    rsx! {
-                                        div { class: "asked-question",
-                                            div { class: "asked-question__info",
-                                                span {
-                                                    class: if yes {
-                                                        "asked-question__answer asked-question__answer--yes"
-                                                    } else {
-                                                        "asked-question__answer asked-question__answer--no"
-                                                    },
-                                                    if yes { "Yes" } else { "No" }
-                                                }
-                                                span { class: "asked-question__detail",
-                                                    "{radius_km_val:.1} km · {lat:.3}°, {lng:.3}°"
-                                                }
-                                            }
-                                            button {
-                                                class: if is_hl {
-                                                    "btn btn--sm btn--primary"
-                                                } else {
-                                                    "btn btn--sm btn--ghost"
-                                                },
-                                                r#type: "button",
-                                                onclick: move |_| {
-                                                    let currently = *highlighted_id.read() == Some(qid);
-                                                    let new_hl = if currently { None } else { Some(qid) };
-                                                    highlighted_id.set(new_hl);
-                                                    let _ = document::eval(&js_highlight_zone(new_hl));
-                                                },
-                                                if is_hl { "Unhighlight" } else { "Highlight" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }

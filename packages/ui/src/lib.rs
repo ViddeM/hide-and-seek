@@ -9,14 +9,14 @@
 // mod game_code;
 // pub use game_code::GameCode;
 
-// mod map_view;
-// pub use map_view::MapView;
+mod map_view;
+pub use map_view::MapView;
 
 mod map_editor;
 pub use map_editor::BoundaryMapEditor;
 
-// mod radar_explorer;
-// pub use radar_explorer::RadarExplorer;
+mod radar_explorer;
+pub use radar_explorer::RadarExplorer;
 
 // pub mod hider_view;
 pub mod host_setup;

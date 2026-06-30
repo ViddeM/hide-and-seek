@@ -1,17 +1,26 @@
-use api::endpoints::{
-    exclusion_zone::ExclusionZoneResponse, game::GameResponse, maps::MapDetailResponse,
+use api::{
+    endpoints::{
+        exclusion_zone::{AddZoneRequest, ExclusionZoneResponse},
+        game::GameResponse,
+        maps::MapDetailResponse,
+    },
+    types::{
+        Point,
+        area::{Area, Circle},
+    },
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
 
 #[component]
-pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) -> Element {
+pub fn GameView(game: GameResponse, map: MapDetailResponse) -> Element {
     let mut zones: Signal<Vec<ExclusionZoneResponse>> = use_signal(Vec::new);
     let mut show_add = use_signal(|| false);
 
     // Load initial zones
     use_resource(move || async move {
-        if let Ok(loaded) = api::endpoints::exclusion_zone::list_game_exclusion_zones(game_id).await
+        if let Ok(loaded) =
+            api::endpoints::exclusion_zone::list_game_exclusion_zones(game.game_id).await
         {
             zones.write().clone_from(&loaded);
         }
@@ -22,13 +31,14 @@ pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) ->
         let ws_js = format!(
             r#"(function(){{
                 if(window._hideseekWs)return;
-                var ws=new WebSocket('ws://'+location.host+'/api/ws/{game_id}');
+                var ws=new WebSocket('ws://'+location.host+'/api/ws/{}');
                 ws.onmessage=function(e){{
                     var msg=JSON.parse(e.data);
                     if(msg.type==='ping'){{ws.send(JSON.stringify({{type:'pong'}}));}}
                 }};
                 window._hideseekWs=ws;
-            }})();"#
+            }})();"#,
+            game.game_id
         );
         let _ = document::eval(&ws_js);
     });
@@ -53,9 +63,8 @@ pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) ->
 
                 if *show_add.read() {
                     AddZoneForm {
-                        game_id,
-                        map_questions: map.questions.clone(),
-                        on_added: move |zone: ExclusionZone| {
+                        game_id: game.game_id,
+                        on_added: move |zone: ExclusionZoneResponse| {
                             zones.write().push(zone);
                             show_add.set(false);
                         },
@@ -67,7 +76,7 @@ pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) ->
                         ZoneItem {
                             key: "{zone.id}",
                             zone: zone.clone(),
-                            game_id,
+                            game_id: game.game_id,
                             on_removed: move |id: Uuid| {
                                 zones.write().retain(|z| z.id != id);
                             },
@@ -76,9 +85,9 @@ pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) ->
                 }
 
                 crate::RadarExplorer {
-                    game_id: game_id,
+                    game_id: game.game_id,
                     is_seeker: true,
-                    on_zone_added: move |zone: ExclusionZone| {
+                    on_zone_added: move |zone: ExclusionZoneResponse| {
                         zones.write().push(zone);
                     },
                 }
@@ -88,16 +97,11 @@ pub fn GameView(game_id: Uuid, session: GameResponse, map: MapDetailResponse) ->
 }
 
 #[component]
-fn AddZoneForm(
-    game_id: Uuid,
-    map_questions: Vec<MapQuestion>,
-    on_added: EventHandler<ExclusionZoneResponse>,
-) -> Element {
+fn AddZoneForm(game_id: Uuid, on_added: EventHandler<ExclusionZoneResponse>) -> Element {
     let mut lat = use_signal(String::new);
     let mut lng = use_signal(String::new);
     let mut radius = use_signal(|| "500".to_string());
     let mut label = use_signal(String::new);
-    let mut selected_question = use_signal(|| None::<Uuid>);
     let mut exclude_outside = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
@@ -124,19 +128,22 @@ fn AddZoneForm(
         loading.set(true);
         error.set(None);
         let req = AddZoneRequest {
-            center_lat: lat_v,
-            center_lng: lng_v,
-            radius_m: r_v,
+            area: Area::Circle(Circle {
+                center: Point {
+                    lat: lat_v,
+                    lng: lng_v,
+                },
+                radius: r_v as f64,
+            }),
             exclude_outside: *exclude_outside.read(),
             label: {
                 let l = label.read().trim().to_string();
                 if l.is_empty() { None } else { Some(l) }
             },
-            question_id: *selected_question.read(),
         };
 
         spawn(async move {
-            match api::zones::add_exclusion_zone(game_id, req).await {
+            match api::endpoints::exclusion_zone::create_exclusion_zone(game_id, req).await {
                 Ok(zone) => {
                     loading.set(false);
                     on_added.call(zone);
@@ -182,20 +189,6 @@ fn AddZoneForm(
                 }
             }
 
-            if !map_questions.is_empty() {
-                div { class: "form-row",
-                    label { "Link to question" }
-                    select {
-                        onchange: move |e| {
-                            selected_question.set(e.value().parse::<Uuid>().ok());
-                        },
-                        option { value: "", "— none —" }
-                        for q in &map_questions {
-                            option { value: "{q.id}", "{q.text}" }
-                        }
-                    }
-                }
-            }
             if let Some(msg) = error.read().as_ref() {
                 p { class: "form-error", "{msg}" }
             }
@@ -235,7 +228,7 @@ fn ZoneItem(zone: ExclusionZoneResponse, game_id: Uuid, on_removed: EventHandler
                     strong { "{label}" }
                     span { "  " }
                 }
-                span { "{zone.radius_m}m" }
+                span { "{zone.area.display()}" }
                 if zone.exclude_outside {
                     span { class: "zone-item__tag", " · inside only" }
                 }

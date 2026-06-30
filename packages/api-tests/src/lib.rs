@@ -1,5 +1,6 @@
 pub mod seed;
 
+use api::endpoints::exclusion_zone::AddZoneRequest;
 use api::endpoints::game::CreateGameRequest;
 use api::endpoints::maps::CreateMapRequest;
 use dioxus::prelude::*;
@@ -60,5 +61,9 @@ pub fn game_body(request: CreateGameRequest) -> serde_json::Value {
 }
 
 pub fn map_body(request: CreateMapRequest) -> serde_json::Value {
+    serde_json::json!({ "request": request })
+}
+
+pub fn exclusion_zone_body(request: AddZoneRequest) -> serde_json::Value {
     serde_json::json!({ "request": request })
 }
