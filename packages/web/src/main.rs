@@ -40,7 +40,20 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-        Router::<Route> {}
+        ErrorBoundary {
+            handle_error: |ctx: ErrorContext| rsx! {
+                main { class: "error-page",
+                    if let Some(e) = ctx.error() {
+                        p { class: "form-error", "{e}" }
+                    }
+                    a { href: "/", "← Back to start" }
+                }
+            },
+            SuspenseBoundary {
+                fallback: |_| rsx! { main { class: "loading", p { "Loading…" } } },
+                Router::<Route> {}
+            }
+        }
     }
 }
 
