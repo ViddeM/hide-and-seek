@@ -1,4 +1,4 @@
-use api::types::{Point, map_size::MapSize};
+use api::types::{Point, game_code::GameCode, map_size::MapSize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -72,4 +72,25 @@ pub async fn seed_map_with_boundary(pool: &PgPool, name: &str, size: MapSize, ve
     .expect("Failed to seed map");
 
     SeededMap { id, name: name.to_string(), size, vertices }
+}
+
+pub struct SeededGame {
+    pub id: Uuid,
+    pub code: GameCode,
+    pub map_id: Uuid,
+}
+
+/// Seed a game row with a given map_id. The game starts in the 'lobby' status.
+pub async fn seed_game(pool: &PgPool, map_id: Uuid) -> SeededGame {
+    let code = GameCode::random();
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO games (code, map_id) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(code.to_string())
+    .bind(map_id)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to seed game");
+
+    SeededGame { id, code, map_id }
 }

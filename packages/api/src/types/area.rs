@@ -19,6 +19,7 @@ pub struct Polygon {
     pub vertices: Vec<Point>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Area {
     Circle(Circle),
     Line(Line),
