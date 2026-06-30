@@ -10,9 +10,21 @@ pub fn GameView(game_id: Uuid) -> Element {
         Ok::<_, CapturedError>((game, map))
     });
 
-    let (game, map) = (*data.suspend()?.read()).clone()?;
-
-    rsx! {
-        ui::game_view::GameView { game, map }
+    match &*data.read() {
+        None => rsx! {
+            main { class: "loading", p { "Loading…" } }
+        },
+        Some(Err(e)) => {
+            let msg = e.to_string();
+            rsx! {
+                main { class: "error-page",
+                    p { class: "form-error", "{msg}" }
+                    a { href: "/", "← Back to start" }
+                }
+            }
+        }
+        Some(Ok((game, map))) => rsx! {
+            ui::game_view::GameView { game: game.clone(), map: map.clone() }
+        },
     }
 }
