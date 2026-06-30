@@ -16,13 +16,15 @@ use uuid::Uuid;
 pub fn GameView(game: GameResponse, map: MapDetailResponse) -> Element {
     let mut zones: Signal<Vec<ExclusionZoneResponse>> = use_signal(Vec::new);
     let mut show_add = use_signal(|| false);
+    let mut load_error = use_signal(|| None::<String>);
 
-    // Load initial zones
-    use_resource(move || async move {
-        if let Ok(loaded) =
-            api::endpoints::exclusion_zone::list_game_exclusion_zones(game.game_id).await
-        {
-            zones.write().clone_from(&loaded);
+    let zones_res = use_resource(move || api::endpoints::exclusion_zone::list_game_exclusion_zones(game.game_id));
+
+    use_effect(move || {
+        match &*zones_res.read() {
+            Some(Ok(loaded)) => { zones.set(loaded.clone()); load_error.set(None); }
+            Some(Err(e)) => load_error.set(Some(e.to_string())),
+            None => {}
         }
     });
 
@@ -54,6 +56,10 @@ pub fn GameView(game: GameResponse, map: MapDetailResponse) -> Element {
 
             div { class: "seeker-view__panel",
                 h2 { "Exclusion Zones" }
+
+                if let Some(msg) = load_error.read().as_ref() {
+                    p { class: "form-error", "{msg}" }
+                }
 
                 button {
                     class: "btn btn--primary",

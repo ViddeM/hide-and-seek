@@ -29,6 +29,8 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
 
     let mut show_create_map = use_signal(|| false);
 
+    let map_list = (*maps.suspend()?.read()).clone()?;
+
     let submit_game = move |evt: Event<FormData>| {
         evt.prevent_default();
         if *loading.read() {
@@ -128,33 +130,16 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
 
                 label { "Select Map" }
 
-                match &*maps.read() {
-                    None => rsx! {
-                        p { class: "map-loading", "Loading maps…" }
-                    },
-                    Some(Err(e)) => {
-                        rsx! {
-                            p { class: "form-error", "Failed to load maps: {e}" }
-                        }
-                    }
-                    Some(Ok(map_list)) => {
-                        // let extra = new_maps.read().clone();
-                        let extra = vec![];
-                        let all_empty = map_list.maps.is_empty() && extra.is_empty();
-                        rsx! {
-                            if all_empty {
-                                p { class: "map-empty-hint", "No maps yet — use the form below to create your first one." }
-                            }
-                            ul { class: "map-list",
-                                for map in map_list.maps.iter().chain(extra.iter()) {
-                                    MapOption {
-                                        key: "{map.id}",
-                                        map: map.clone(),
-                                        selected: *selected_map.read() == Some(map.id),
-                                        on_select: move |id| selected_map.set(Some(id)),
-                                    }
-                                }
-                            }
+                if map_list.maps.is_empty() {
+                    p { class: "map-empty-hint", "No maps yet — use the form below to create your first one." }
+                }
+                ul { class: "map-list",
+                    for map in map_list.maps.iter() {
+                        MapOption {
+                            key: "{map.id}",
+                            map: map.clone(),
+                            selected: *selected_map.read() == Some(map.id),
+                            on_select: move |id| selected_map.set(Some(id)),
                         }
                     }
                 }
