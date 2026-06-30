@@ -25,3 +25,6 @@ pub mod host_setup;
 pub mod landing;
 // pub mod lobby;
 // pub mod seeker_view;
+
+pub mod game_view;
+pub use game_view::GameView;

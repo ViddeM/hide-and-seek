@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod area;
 pub mod game_code;
+pub mod game_status;
 pub mod map_size;
 
 pub type Meters = f64;

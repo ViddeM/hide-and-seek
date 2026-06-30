@@ -1,6 +1,6 @@
 use api::{
-    endpoints::maps::{CreateMapRequest, GetMapResponse, ListMapsResponse, MapSummary},
-    types::{area::Polygon, map_size::MapSize, Point},
+    endpoints::maps::{CreateMapRequest, ListMapsResponse, MapDetailResponse, MapSummary},
+    types::{Point, area::Polygon, map_size::MapSize},
 };
 use uuid::Uuid;
 
@@ -42,11 +42,19 @@ async fn list_maps_returns_seeded_maps() {
 
     assert_eq!(body.maps.len(), 2);
 
-    let found1 = body.maps.iter().find(|m| m.id == m1.id).expect("Map 1 missing from response");
+    let found1 = body
+        .maps
+        .iter()
+        .find(|m| m.id == m1.id)
+        .expect("Map 1 missing from response");
     assert_eq!(found1.name, m1.name);
     assert_eq!(found1.size, m1.size);
 
-    let found2 = body.maps.iter().find(|m| m.id == m2.id).expect("Map 2 missing from response");
+    let found2 = body
+        .maps
+        .iter()
+        .find(|m| m.id == m2.id)
+        .expect("Map 2 missing from response");
     assert_eq!(found2.name, m2.name);
     assert_eq!(found2.size, m2.size);
 }
@@ -54,9 +62,18 @@ async fn list_maps_returns_seeded_maps() {
 fn triangle_bounds() -> Polygon {
     Polygon {
         vertices: vec![
-            Point { lat: 59.330, lng: 18.065 },
-            Point { lat: 59.335, lng: 18.065 },
-            Point { lat: 59.330, lng: 18.075 },
+            Point {
+                lat: 59.330,
+                lng: 18.065,
+            },
+            Point {
+                lat: 59.335,
+                lng: 18.065,
+            },
+            Point {
+                lat: 59.330,
+                lng: 18.075,
+            },
         ],
     }
 }
@@ -117,9 +134,16 @@ async fn created_map_appears_in_list() {
         .expect("GET /api/maps failed");
 
     assert_eq!(list_resp.status().as_u16(), 200);
-    let list: ListMapsResponse = list_resp.json().await.expect("Not valid ListMapsResponse JSON");
+    let list: ListMapsResponse = list_resp
+        .json()
+        .await
+        .expect("Not valid ListMapsResponse JSON");
 
-    let found = list.maps.iter().find(|m| m.id == created.id).expect("Created map missing from list");
+    let found = list
+        .maps
+        .iter()
+        .find(|m| m.id == created.id)
+        .expect("Created map missing from list");
     assert_eq!(found.name, "Södermalm");
     assert_eq!(found.size, MapSize::Large);
 }
@@ -129,9 +153,18 @@ async fn get_map_returns_map_with_boundary() {
     let server = api_tests::spawn_test_server().await;
 
     let vertices = vec![
-        Point { lat: 59.330, lng: 18.065 },
-        Point { lat: 59.335, lng: 18.065 },
-        Point { lat: 59.330, lng: 18.075 },
+        Point {
+            lat: 59.330,
+            lng: 18.065,
+        },
+        Point {
+            lat: 59.335,
+            lng: 18.065,
+        },
+        Point {
+            lat: 59.330,
+            lng: 18.075,
+        },
     ];
     let seeded = api_tests::seed::seed_map_with_boundary(
         &server.pool,
@@ -147,7 +180,10 @@ async fn get_map_returns_map_with_boundary() {
 
     assert_eq!(resp.status().as_u16(), 200);
 
-    let body: GetMapResponse = resp.json().await.expect("Response is not valid GetMapResponse JSON");
+    let body: MapDetailResponse = resp
+        .json()
+        .await
+        .expect("Response is not valid GetMapResponse JSON");
 
     assert_eq!(body.id, seeded.id);
     assert_eq!(body.name, "Kungsholmen");

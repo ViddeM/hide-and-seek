@@ -150,8 +150,7 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                                     MapOption {
                                         key: "{map.id}",
                                         map: map.clone(),
-                                        // selected: *selected_map.read() == Some(map.id),
-                                        selected: true,
+                                        selected: *selected_map.read() == Some(map.id),
                                         on_select: move |id| selected_map.set(Some(id)),
                                     }
                                 }
@@ -230,6 +229,21 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
                     }
                 }
 
+
+                if let Some(msg) = error.read().as_ref() {
+                    p { class: "form-error", "{msg}" }
+                }
+
+                button {
+                    r#type: "submit",
+                    class: "btn btn--primary",
+                    disabled: *loading.read(),
+                    if *loading.read() {
+                        "Creating…"
+                    } else {
+                        "Create Game"
+                    }
+                }
         }
     }
 

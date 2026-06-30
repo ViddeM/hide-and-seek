@@ -94,3 +94,25 @@ impl Display for GameCode {
         Display::fmt(self.deref(), f)
     }
 }
+
+#[cfg(feature = "server")]
+impl sqlx::Type<sqlx::Postgres> for GameCode {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        <String as sqlx::Type<sqlx::Postgres>>::compatible(ty)
+            || <&str as sqlx::Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+#[cfg(feature = "server")]
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for GameCode {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let s = <&str as sqlx::Decode<'r, sqlx::Postgres>>::decode(value)?;
+        s.parse::<GameCode>().map_err(|e| e.into())
+    }
+}

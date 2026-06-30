@@ -6,6 +6,7 @@ mod landing;
 // mod hider;
 // mod host;
 // mod not_found;
+mod game;
 
 // pub use hider::HiderView;
 // pub use host::HostView;
@@ -15,3 +16,4 @@ pub use landing::LandingPage;
 // pub use lobby::Lobby;
 // pub use not_found::NotFound;
 // pub use seeker::SeekerView;
+pub use game::GameView;

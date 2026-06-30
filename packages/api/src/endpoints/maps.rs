@@ -29,7 +29,7 @@ impl From<services::maps::MapSummary> for MapSummary {
 }
 
 #[cfg(feature = "server")]
-impl From<services::maps::MapDetail> for GetMapResponse {
+impl From<services::maps::MapDetail> for MapDetailResponse {
     fn from(value: services::maps::MapDetail) -> Self {
         Self {
             id: value.id,
@@ -69,7 +69,7 @@ pub async fn create_map(request: CreateMapRequest) -> Result<MapSummary> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GetMapResponse {
+pub struct MapDetailResponse {
     pub id: Uuid,
     pub name: String,
     pub size: MapSize,
@@ -77,7 +77,7 @@ pub struct GetMapResponse {
 }
 
 #[get("/api/maps/{map_id}", pool: Extension<PgPool>)]
-pub async fn get_map(map_id: Uuid) -> Result<GetMapResponse> {
+pub async fn get_map(map_id: Uuid) -> Result<MapDetailResponse> {
     let map = map_service::get_map(&pool, map_id).await?;
     Ok(map.into())
 }
