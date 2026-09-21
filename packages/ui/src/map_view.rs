@@ -60,11 +60,12 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                     attribution: '&copy; OpenStreetMap contributors'
                 }}).addTo(map);
-                // Shade everything outside the play area
+                // Shade everything outside the play area.
+                // Higher opacity (0.65) so the gray clearly overpowers colourful map tiles.
                 var world = [[-90,-180],[-90,180],[90,180],[90,-180]];
                 L.polygon([world, pts], {{
-                    fillColor: '#1e1e50',
-                    fillOpacity: 0.45,
+                    fillColor: '#3a3a3a',
+                    fillOpacity: 0.65,
                     stroke: false,
                     interactive: false,
                     className: 'outside-boundary'
@@ -125,8 +126,9 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
 
             if zone.exclude_outside {
                 // Yes zone: boundary polygon with this circle cut out as a hole.
-                // mix-blend-mode: darken (via CSS class) means multiple such polygons
-                // don't compound — the union looks like one flat shaded area.
+                // Zones sit in an isolated pane (isolation:isolate, opacity:0.55)
+                // with fillOpacity:1, so overlapping zones cover each other opaquely
+                // within the pane — no compounding when the pane composites over the map.
                 js.push_str(&format!(
                     "if(!z['{id}']&&boundary&&boundary.length>0){{\
                         var ring=_circleRing({lat},{lng},{r},64);\

@@ -520,7 +520,7 @@ input:focus, select:focus { border-color: var(--color-primary); }
 }
 .radar-explorer__label { font-size: 0.8rem; color: var(--color-muted); white-space: nowrap; min-width: 50px; }
 .radar-explorer__radius-val { font-size: 0.8rem; min-width: 50px; text-align: right; }
-input[type="range"] { flex: 1; accent-color: var(--color-primary); }
+input[type="range"] { flex: 1; min-width: 0; accent-color: var(--color-primary); }
 .radar-explorer__toggle { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
 .radar-explorer__impact { font-size: 0.8rem; color: var(--color-muted); margin-bottom: 0.5rem; }
 .radar-explorer__apply { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
@@ -595,11 +595,10 @@ input[type="range"] { flex: 1; accent-color: var(--color-primary); }
 }
 
 /* ── Zone / boundary map layers ───────────────────────────────── */
-/* Prevent overlapping excluded zones from compounding their shade */
-.leaflet-overlay-pane path.zone-excluded,
-.leaflet-overlay-pane path.outside-boundary {
-  mix-blend-mode: darken;
-}
+/* zone-excluded paths live in the isolated zonesPane (opacity:0.55,
+   isolation:isolate). fillOpacity:1 within the pane means overlapping
+   zones are opaque against each other — no compounding — and the whole
+   pane composites at 55% opacity as one flat layer over the map. */
 
 /* ── Host View ─────────────────────────────────────────────── */
 .host-view {
