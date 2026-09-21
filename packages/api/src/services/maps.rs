@@ -60,10 +60,10 @@ pub async fn create_map(
     match super::overpass::fetch_transit(size, &bounds).await {
         Ok(routes) => {
             if let Err(e) = queries::transit::insert_transit_data(pool, map_id, &routes).await {
-                log::warn!("Failed to store transit data for map {map_id}: {e}");
+                tracing::warn!("Failed to store transit data for map {map_id}: {e}");
             }
         }
-        Err(e) => log::warn!("Overpass fetch failed for map {map_id}: {e}"),
+        Err(e) => tracing::warn!("Overpass fetch failed for map {map_id}: {e}"),
     }
 
     Ok(MapSummary { id: map_id, name, size })

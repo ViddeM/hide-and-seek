@@ -25,6 +25,7 @@ log = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -42,4 +43,5 @@ server = [
     "dep:rand",
     "dep:futures-util",
     "dep:reqwest",
+    "dep:tracing",
 ]
