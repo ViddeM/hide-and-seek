@@ -1,0 +1,288 @@
+use std::collections::HashMap;
+
+use serde::Deserialize;
+
+use crate::types::{
+    Point,
+    area::Polygon,
+    map_size::MapSize,
+    transit::{TransitRoute, TransitRouteType, TransitStop},
+};
+
+const OVERPASS_URL: &str = "https://overpass-api.de/api/interpreter";
+
+fn route_types_for_size(size: MapSize) -> &'static str {
+    match size {
+        MapSize::Small => "bus|tram|subway|trolleybus|monorail|light_rail|ferry|funicular",
+        MapSize::Medium => "tram|subway|light_rail|monorail|train|ferry",
+        MapSize::Large => "train|ferry",
+    }
+}
+
+fn parse_route_type(s: &str) -> Option<TransitRouteType> {
+    match s {
+        "bus" => Some(TransitRouteType::Bus),
+        "tram" => Some(TransitRouteType::Tram),
+        "subway" | "metro" => Some(TransitRouteType::Subway),
+        "train" => Some(TransitRouteType::Train),
+        "ferry" => Some(TransitRouteType::Ferry),
+        "monorail" => Some(TransitRouteType::Monorail),
+        "light_rail" => Some(TransitRouteType::LightRail),
+        "trolleybus" => Some(TransitRouteType::Trolleybus),
+        "funicular" => Some(TransitRouteType::Funicular),
+        _ => None,
+    }
+}
+
+fn point_in_polygon(point: &Point, polygon: &[Point]) -> bool {
+    let n = polygon.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let xi = polygon[i].lng;
+        let yi = polygon[i].lat;
+        let xj = polygon[j].lng;
+        let yj = polygon[j].lat;
+        if ((yi > point.lat) != (yj > point.lat))
+            && (point.lng < (xj - xi) * (point.lat - yi) / (yj - yi) + xi)
+        {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn build_poly_string(vertices: &[Point]) -> String {
+    vertices
+        .iter()
+        .map(|p| format!("{} {}", p.lat, p.lng))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            b => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+// ── Overpass JSON response types ──────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct OverpassResponse {
+    elements: Vec<Element>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum Element {
+    Node(NodeElement),
+    Way(WayElement),
+    Relation(RelationElement),
+}
+
+#[derive(Debug, Deserialize)]
+struct NodeElement {
+    id: i64,
+    lat: f64,
+    lon: f64,
+    #[serde(default)]
+    tags: HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WayElement {
+    #[allow(dead_code)]
+    id: i64,
+    nodes: Vec<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RelationElement {
+    id: i64,
+    tags: HashMap<String, String>,
+    members: Vec<Member>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Member {
+    #[serde(rename = "type")]
+    member_type: String,
+    #[serde(rename = "ref")]
+    member_ref: i64,
+    #[serde(default)]
+    role: String,
+}
+
+pub async fn fetch_transit(
+    size: MapSize,
+    bounds: &Polygon,
+) -> Result<Vec<TransitRoute>, anyhow::Error> {
+    let poly_str = build_poly_string(&bounds.vertices);
+    let types = route_types_for_size(size);
+
+    let query = format!(
+        r#"[out:json][timeout:60];
+(
+  relation["type"="route"]["route"~"{types}"](poly:"{poly_str}");
+);
+out body;
+>;
+out skel qt;"#
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(70))
+        .build()?;
+
+    let response = client
+        .post(OVERPASS_URL)
+        .body(format!("data={}", urlencode(&query)))
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let overpass: OverpassResponse = response.json().await?;
+
+    let mut nodes: HashMap<i64, NodeElement> = HashMap::new();
+    let mut ways: HashMap<i64, WayElement> = HashMap::new();
+    let mut relations: Vec<RelationElement> = Vec::new();
+
+    for element in overpass.elements {
+        match element {
+            Element::Node(n) => {
+                nodes.insert(n.id, n);
+            }
+            Element::Way(w) => {
+                ways.insert(w.id, w);
+            }
+            Element::Relation(r) => relations.push(r),
+        }
+    }
+
+    let vertices = &bounds.vertices;
+    let mut routes: Vec<TransitRoute> = Vec::new();
+
+    let stop_roles = [
+        "stop",
+        "stop_entry_only",
+        "stop_exit_only",
+        "platform",
+        "platform_entry_only",
+        "platform_exit_only",
+    ];
+
+    for relation in relations {
+        let route_tag = relation.tags.get("route").map(|s| s.as_str()).unwrap_or("");
+        let Some(route_type) = parse_route_type(route_tag) else {
+            continue;
+        };
+
+        let name = relation
+            .tags
+            .get("ref")
+            .or_else(|| relation.tags.get("name"))
+            .cloned()
+            .unwrap_or_else(|| format!("Route {}", relation.id));
+
+        let long_name = relation
+            .tags
+            .get("name")
+            .filter(|n| *n != &name)
+            .cloned();
+
+        let color = relation
+            .tags
+            .get("colour")
+            .or_else(|| relation.tags.get("color"))
+            .cloned();
+
+        let mut stop_node_ids: Vec<i64> = Vec::new();
+        let mut way_member_ids: Vec<i64> = Vec::new();
+
+        for member in &relation.members {
+            if member.member_type == "node" && stop_roles.contains(&member.role.as_str()) {
+                stop_node_ids.push(member.member_ref);
+            } else if member.member_type == "way" {
+                way_member_ids.push(member.member_ref);
+            }
+        }
+
+        let in_boundary_stops: Vec<TransitStop> = stop_node_ids
+            .iter()
+            .filter_map(|id| {
+                let node = nodes.get(id)?;
+                let pt = Point { lat: node.lat, lng: node.lon };
+                if !point_in_polygon(&pt, vertices) {
+                    return None;
+                }
+                let stop_name = node
+                    .tags
+                    .get("name")
+                    .cloned()
+                    .unwrap_or_else(|| format!("Stop {}", node.id));
+                Some(TransitStop {
+                    id: uuid::Uuid::new_v4(),
+                    name: stop_name,
+                    lat: node.lat,
+                    lng: node.lon,
+                })
+            })
+            .collect();
+
+        if in_boundary_stops.len() < 2 {
+            continue;
+        }
+
+        let mut waypoints: Vec<Point> = Vec::new();
+        for way_id in &way_member_ids {
+            if let Some(way) = ways.get(way_id) {
+                let seg: Vec<Point> = way
+                    .nodes
+                    .iter()
+                    .filter_map(|nid| nodes.get(nid))
+                    .map(|n| Point { lat: n.lat, lng: n.lon })
+                    .collect();
+
+                if !waypoints.is_empty() && !seg.is_empty() {
+                    let last = waypoints.last().unwrap();
+                    let first = seg.first().unwrap();
+                    if (last.lat - first.lat).abs() < 1e-9
+                        && (last.lng - first.lng).abs() < 1e-9
+                    {
+                        waypoints.extend_from_slice(&seg[1..]);
+                    } else {
+                        waypoints.extend(seg);
+                    }
+                } else {
+                    waypoints.extend(seg);
+                }
+            }
+        }
+
+        routes.push(TransitRoute {
+            id: uuid::Uuid::new_v4(),
+            name,
+            long_name,
+            route_type,
+            color,
+            waypoints,
+            stops: in_boundary_stops,
+        });
+    }
+
+    Ok(routes)
+}

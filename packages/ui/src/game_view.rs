@@ -7,6 +7,7 @@ use api::{
     types::{
         Point,
         area::{Area, Circle},
+        transit::TransitData,
     },
 };
 use dioxus::prelude::*;
@@ -17,14 +18,22 @@ pub fn GameView(game: GameResponse, map: MapDetailResponse) -> Element {
     let mut zones: Signal<Vec<ExclusionZoneResponse>> = use_signal(Vec::new);
     let mut show_add = use_signal(|| false);
     let mut load_error = use_signal(|| None::<String>);
+    let mut transit: Signal<Option<TransitData>> = use_signal(|| None);
 
     let zones_res = use_resource(move || api::endpoints::exclusion_zone::list_game_exclusion_zones(game.game_id));
+    let transit_res = use_resource(move || api::endpoints::maps::get_transit(map.id));
 
     use_effect(move || {
         match &*zones_res.read() {
             Some(Ok(loaded)) => { zones.set(loaded.clone()); load_error.set(None); }
             Some(Err(e)) => load_error.set(Some(e.to_string())),
             None => {}
+        }
+    });
+
+    use_effect(move || {
+        if let Some(Ok(data)) = &*transit_res.read() {
+            transit.set(Some(data.clone()));
         }
     });
 
@@ -51,6 +60,7 @@ pub fn GameView(game: GameResponse, map: MapDetailResponse) -> Element {
                 crate::MapView {
                     boundary: map.boundary.clone(),
                     zones: zones,
+                    transit: transit,
                 }
             }
 

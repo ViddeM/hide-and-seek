@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{area::Polygon, map_size::MapSize};
+use crate::types::{area::Polygon, map_size::MapSize, transit::TransitData};
 
 #[cfg(feature = "server")]
 use {
@@ -80,4 +80,10 @@ pub struct MapDetailResponse {
 pub async fn get_map(map_id: Uuid) -> Result<MapDetailResponse> {
     let map = map_service::get_map(&pool, map_id).await?;
     Ok(map.into())
+}
+
+#[get("/api/maps/{map_id}/transit", pool: Extension<PgPool>)]
+pub async fn get_transit(map_id: Uuid) -> Result<TransitData> {
+    let data = map_service::get_transit_data(&pool, map_id).await?;
+    Ok(data)
 }

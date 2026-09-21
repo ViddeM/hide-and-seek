@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::db::queries;
 use crate::error::AppError;
-use crate::types::{area::Polygon, map_size::MapSize};
+use crate::types::{area::Polygon, map_size::MapSize, transit::TransitData};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapDetail {
@@ -57,7 +57,22 @@ pub async fn create_map(
 
     tx.commit().await.map_err(AppError::from)?;
 
+    match super::overpass::fetch_transit(size, &bounds).await {
+        Ok(routes) => {
+            if let Err(e) = queries::transit::insert_transit_data(pool, map_id, &routes).await {
+                log::warn!("Failed to store transit data for map {map_id}: {e}");
+            }
+        }
+        Err(e) => log::warn!("Overpass fetch failed for map {map_id}: {e}"),
+    }
+
     Ok(MapSummary { id: map_id, name, size })
+}
+
+pub async fn get_transit_data(pool: &PgPool, map_id: Uuid) -> Result<TransitData, AppError> {
+    queries::transit::get_transit_data(pool, map_id)
+        .await
+        .map_err(AppError::from)
 }
 
 /// Fetch all available maps

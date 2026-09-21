@@ -4,6 +4,7 @@ pub mod area;
 pub mod game_code;
 pub mod game_status;
 pub mod map_size;
+pub mod transit;
 
 pub type Meters = f64;
 pub type Coordinate = f64;

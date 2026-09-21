@@ -10,6 +10,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # server-only — enabled by the "server" feature
 sqlx = { workspace = true, optional = true }
@@ -23,6 +24,7 @@ env_logger = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -39,4 +41,5 @@ server = [
     "dep:log",
     "dep:rand",
     "dep:futures-util",
+    "dep:reqwest",
 ]

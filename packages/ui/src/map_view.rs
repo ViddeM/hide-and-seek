@@ -1,6 +1,9 @@
 use api::{
     endpoints::exclusion_zone::ExclusionZoneResponse,
-    types::area::{Area, Polygon},
+    types::{
+        area::{Area, Polygon},
+        transit::TransitData,
+    },
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
@@ -32,8 +35,20 @@ function _restoreZones(){
 }
 "#;
 
+const TRANSIT_DEFAULT_COLORS: &str = r#"
+var _transitColors={
+    bus:'#1a73e8',tram:'#e8a81a',subway:'#dc3545',train:'#198754',
+    ferry:'#0dcaf0',light_rail:'#6f42c1',monorail:'#fd7e14',
+    trolleybus:'#20c997',funicular:'#d63384'
+};
+"#;
+
 #[component]
-pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> Element {
+pub fn MapView(
+    boundary: Polygon,
+    zones: Signal<Vec<ExclusionZoneResponse>>,
+    transit: Signal<Option<TransitData>>,
+) -> Element {
     // Initialise Leaflet after first render — async-poll for CDN load
     use_effect(move || {
         if boundary.vertices.is_empty() {
@@ -61,7 +76,6 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                     attribution: '&copy; OpenStreetMap contributors'
                 }}).addTo(map);
                 // Shade everything outside the play area.
-                // Higher opacity (0.65) so the gray clearly overpowers colourful map tiles.
                 var world = [[-90,-180],[-90,180],[90,180],[90,-180]];
                 L.polygon([world, pts], {{
                     fillColor: '#3a3a3a',
@@ -80,6 +94,8 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                 window._hideseekMap = map;
                 window._hideseekZones = {{}};
                 window._hideseekZoneMeta = {{}};
+                var transitPane = map.createPane('transitPane');
+                transitPane.style.zIndex = 390;
                 var zonesPane = map.createPane('zonesPane');
                 zonesPane.style.isolation = 'isolate';
                 zonesPane.style.opacity = '0.55';
@@ -90,8 +106,6 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
     });
 
     // Sync zones signal → Leaflet layers.
-    // Every zone — whether Yes (exclude outside) or No (exclude circle) — gets its own
-    // named layer stored in _hideseekZones[id] so it can be highlighted individually.
     use_effect(move || {
         let zones_snap = zones.read().clone();
 
@@ -125,10 +139,6 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
             let r = circle.radius;
 
             if zone.exclude_outside {
-                // Yes zone: boundary polygon with this circle cut out as a hole.
-                // Zones sit in an isolated pane (isolation:isolate, opacity:0.55)
-                // with fillOpacity:1, so overlapping zones cover each other opaquely
-                // within the pane — no compounding when the pane composites over the map.
                 js.push_str(&format!(
                     "if(!z['{id}']&&boundary&&boundary.length>0){{\
                         var ring=_circleRing({lat},{lng},{r},64);\
@@ -139,7 +149,6 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
                         }}).addTo(m);"
                 ));
             } else {
-                // No zone: simple shaded circle.
                 js.push_str(&format!(
                     "if(!z['{id}']){{\
                         var c=L.circle([{lat},{lng}],{{\
@@ -161,6 +170,47 @@ pub fn MapView(boundary: Polygon, zones: Signal<Vec<ExclusionZoneResponse>>) -> 
 
         js.push_str("window._hideseekZones=z; window._hideseekZoneMeta=meta;");
         js.push_str("})();");
+        let _ = document::eval(&js);
+    });
+
+    // Render transit routes and stops when transit data arrives.
+    use_effect(move || {
+        let transit_snap = transit.read().clone();
+        let Some(data) = transit_snap else {
+            return;
+        };
+
+        let routes_json = serde_json::to_string(&data.routes).unwrap_or_default();
+
+        let js = format!(
+            r#"(function syncTransit(){{
+                var m=window._hideseekMap;
+                if(!m){{setTimeout(syncTransit,200);return;}}
+                if(window._hideseekTransitLoaded)return;
+                window._hideseekTransitLoaded=true;
+                {colors}
+                var routes={routes_json};
+                routes.forEach(function(route){{
+                    var color=route.color||_transitColors[route.route_type]||'#888';
+                    if(route.waypoints&&route.waypoints.length>1){{
+                        var pts=route.waypoints.map(function(p){{return[p.lat,p.lng];}});
+                        L.polyline(pts,{{
+                            color:color,weight:3,opacity:0.8,
+                            interactive:false,pane:'transitPane'
+                        }}).bindTooltip(route.name).addTo(m);
+                    }}
+                    (route.stops||[]).forEach(function(stop){{
+                        L.circleMarker([stop.lat,stop.lng],{{
+                            radius:5,color:'#fff',weight:1.5,
+                            fillColor:color,fillOpacity:1,
+                            pane:'transitPane'
+                        }}).bindTooltip(stop.name).addTo(m);
+                    }});
+                }});
+            }})();"#,
+            colors = TRANSIT_DEFAULT_COLORS,
+            routes_json = routes_json,
+        );
         let _ = document::eval(&js);
     });
 
