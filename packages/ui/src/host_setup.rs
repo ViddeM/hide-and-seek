@@ -122,68 +122,58 @@ pub fn HostSetupForm(on_created: EventHandler<CreateGameResponse>) -> Element {
         });
     };
 
-    let mut do_save_map = move |routes: Vec<TransitRoute>| {
-        if *create_loading.read() {
-            return;
-        }
+    // Signals are Copy so each handler captures them independently.
+    let submit_with_transit = move |_| {
+        if *create_loading.read() { return; }
         let name_val = new_map_name.read().trim().to_string();
-        if name_val.is_empty() {
-            create_error.set(Some("Map name is required".to_string()));
-            return;
-        }
+        if name_val.is_empty() { create_error.set(Some("Map name is required".to_string())); return; }
         let boundary_pts = boundary.read().clone();
-        if boundary_pts.len() < 3 {
-            create_error.set(Some("Place at least 3 waypoints on the map".to_string()));
-            return;
-        }
-
+        if boundary_pts.len() < 3 { create_error.set(Some("Place at least 3 waypoints on the map".to_string())); return; }
+        let routes: Vec<TransitRoute> = transit_routes.read().clone().into_iter()
+            .zip(route_selected.read().clone().into_iter())
+            .filter(|(_, sel)| *sel).map(|(r, _)| r).collect();
         create_error.set(None);
         create_loading.set(true);
         let size = *new_map_size.read();
-
         spawn(async move {
-            let req = CreateMapRequest {
-                name: name_val,
-                size,
-                bounds: Polygon { vertices: boundary_pts },
-                transit_routes: routes,
-            };
-            match api::endpoints::maps::create_map(req).await {
+            match api::endpoints::maps::create_map(CreateMapRequest {
+                name: name_val, size, bounds: Polygon { vertices: boundary_pts }, transit_routes: routes,
+            }).await {
                 Ok(map) => {
-                    create_loading.set(false);
-                    selected_map.set(Some(map.id));
-                    show_create_map.set(false);
-                    new_map_name.set(String::new());
-                    boundary.write().clear();
-                    new_map_size.set(MapSize::Medium);
-                    map_step.set(MapStep::Boundary);
-                    transit_routes.set(Vec::new());
-                    route_selected.set(Vec::new());
-                    transit_error.set(None);
-                    maps.restart();
+                    create_loading.set(false); selected_map.set(Some(map.id));
+                    show_create_map.set(false); new_map_name.set(String::new());
+                    boundary.write().clear(); new_map_size.set(MapSize::Medium);
+                    map_step.set(MapStep::Boundary); transit_routes.set(Vec::new());
+                    route_selected.set(Vec::new()); transit_error.set(None); maps.restart();
                 }
-                Err(e) => {
-                    create_loading.set(false);
-                    create_error.set(Some(e.to_string()));
-                }
+                Err(e) => { create_loading.set(false); create_error.set(Some(e.to_string())); }
             }
         });
     };
 
-    let submit_with_transit = move |_| {
-        let routes_snap = transit_routes.read().clone();
-        let sel_snap = route_selected.read().clone();
-        let selected: Vec<TransitRoute> = routes_snap
-            .into_iter()
-            .zip(sel_snap.into_iter())
-            .filter(|(_, sel)| *sel)
-            .map(|(r, _)| r)
-            .collect();
-        do_save_map(selected);
-    };
-
     let submit_without_transit = move |_| {
-        do_save_map(vec![]);
+        if *create_loading.read() { return; }
+        let name_val = new_map_name.read().trim().to_string();
+        if name_val.is_empty() { create_error.set(Some("Map name is required".to_string())); return; }
+        let boundary_pts = boundary.read().clone();
+        if boundary_pts.len() < 3 { create_error.set(Some("Place at least 3 waypoints on the map".to_string())); return; }
+        create_error.set(None);
+        create_loading.set(true);
+        let size = *new_map_size.read();
+        spawn(async move {
+            match api::endpoints::maps::create_map(CreateMapRequest {
+                name: name_val, size, bounds: Polygon { vertices: boundary_pts }, transit_routes: vec![],
+            }).await {
+                Ok(map) => {
+                    create_loading.set(false); selected_map.set(Some(map.id));
+                    show_create_map.set(false); new_map_name.set(String::new());
+                    boundary.write().clear(); new_map_size.set(MapSize::Medium);
+                    map_step.set(MapStep::Boundary); transit_routes.set(Vec::new());
+                    route_selected.set(Vec::new()); transit_error.set(None); maps.restart();
+                }
+                Err(e) => { create_loading.set(false); create_error.set(Some(e.to_string())); }
+            }
+        });
     };
 
     let submit_game = move |evt: Event<FormData>| {
