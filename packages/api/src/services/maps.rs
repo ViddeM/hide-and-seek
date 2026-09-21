@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::db::queries;
 use crate::error::AppError;
-use crate::types::{area::Polygon, map_size::MapSize, transit::TransitData};
+use crate::types::{area::Polygon, map_size::MapSize, transit::{TransitData, TransitRoute}};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapDetail {
@@ -40,6 +40,7 @@ pub async fn create_map(
     name: String,
     size: MapSize,
     bounds: Polygon,
+    transit_routes: Vec<TransitRoute>,
 ) -> Result<MapSummary, AppError> {
     let mut tx = pool.begin().await.map_err(AppError::from)?;
 
@@ -57,13 +58,10 @@ pub async fn create_map(
 
     tx.commit().await.map_err(AppError::from)?;
 
-    match super::overpass::fetch_transit(size, &bounds).await {
-        Ok(routes) => {
-            if let Err(e) = queries::transit::insert_transit_data(pool, map_id, &routes).await {
-                tracing::warn!("Failed to store transit data for map {map_id}: {e}");
-            }
+    if !transit_routes.is_empty() {
+        if let Err(e) = queries::transit::insert_transit_data(pool, map_id, &transit_routes).await {
+            tracing::warn!("Failed to store transit data for map {map_id}: {e}");
         }
-        Err(e) => tracing::warn!("Overpass fetch failed for map {map_id}: {e}"),
     }
 
     Ok(MapSummary { id: map_id, name, size })

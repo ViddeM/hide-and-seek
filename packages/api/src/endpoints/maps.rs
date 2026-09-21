@@ -2,7 +2,11 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{area::Polygon, map_size::MapSize, transit::TransitData};
+use crate::types::{
+    area::Polygon,
+    map_size::MapSize,
+    transit::{TransitData, TransitRoute},
+};
 
 #[cfg(feature = "server")]
 use {
@@ -59,11 +63,19 @@ pub struct CreateMapRequest {
     pub name: String,
     pub size: MapSize,
     pub bounds: Polygon,
+    pub transit_routes: Vec<TransitRoute>,
 }
 
 #[post("/api/maps", pool: Extension<PgPool>)]
 pub async fn create_map(request: CreateMapRequest) -> Result<MapSummary> {
-    let map = map_service::create_map(&pool, request.name, request.size, request.bounds).await?;
+    let map = map_service::create_map(
+        &pool,
+        request.name,
+        request.size,
+        request.bounds,
+        request.transit_routes,
+    )
+    .await?;
 
     Ok(map.into())
 }
@@ -86,4 +98,18 @@ pub async fn get_map(map_id: Uuid) -> Result<MapDetailResponse> {
 pub async fn get_transit(map_id: Uuid) -> Result<TransitData> {
     let data = map_service::get_transit_data(&pool, map_id).await?;
     Ok(data)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PreviewTransitRequest {
+    pub size: MapSize,
+    pub bounds: Polygon,
+}
+
+#[post("/api/transit/preview")]
+pub async fn preview_transit(req: PreviewTransitRequest) -> Result<TransitData> {
+    let routes = crate::services::overpass::fetch_transit(req.size, &req.bounds)
+        .await
+        .map_err(|e| dioxus::prelude::ServerFnError::new(e.to_string()))?;
+    Ok(TransitData { routes })
 }
