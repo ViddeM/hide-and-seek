@@ -18,7 +18,7 @@ const OVERPASS_MIRRORS: &[&str] = &[
 fn route_types_for_size(size: MapSize) -> &'static str {
     match size {
         MapSize::Small => "bus|tram|subway|trolleybus|monorail|light_rail|ferry|funicular",
-        MapSize::Medium => "tram|subway|light_rail|monorail|train|ferry",
+        MapSize::Medium => "bus|tram|subway|trolleybus|light_rail|monorail|train|ferry",
         MapSize::Large => "train|ferry",
     }
 }
@@ -58,6 +58,24 @@ fn point_in_polygon(point: &Point, polygon: &[Point]) -> bool {
         j = i;
     }
     inside
+}
+
+fn round5(v: f64) -> f64 {
+    (v * 100_000.0).round() / 100_000.0
+}
+
+fn thin_segment(seg: Vec<Point>, max_pts: usize) -> Vec<Point> {
+    if seg.len() <= max_pts {
+        return seg;
+    }
+    let step = (seg.len() as f64 / max_pts as f64).ceil() as usize;
+    let mut out: Vec<Point> = seg.iter().step_by(step).cloned().collect();
+    if let Some(last) = seg.last() {
+        if out.last() != Some(last) {
+            out.push(last.clone());
+        }
+    }
+    out
 }
 
 fn build_poly_string(vertices: &[Point]) -> String {
@@ -138,17 +156,17 @@ pub async fn fetch_transit(
     let types = route_types_for_size(size);
 
     let query = format!(
-        r#"[out:json][timeout:60];
+        r#"[out:json][timeout:20];
 (
   relation["type"="route"]["route"~"{types}"](poly:"{poly_str}");
 );
 out body;
 >;
-out skel qt;"#
+out body qt;"#
     );
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(70))
+        .timeout(std::time::Duration::from_secs(25))
         .user_agent("hide-and-seek-game/1.0 (contact: vidar.magnusson@accenture.com)")
         .build()?;
 
@@ -262,8 +280,8 @@ out skel qt;"#
                 Some(TransitStop {
                     id: uuid::Uuid::new_v4(),
                     name: stop_name,
-                    lat: node.lat,
-                    lng: node.lon,
+                    lat: round5(node.lat),
+                    lng: round5(node.lon),
                 })
             })
             .collect();
@@ -288,7 +306,7 @@ out skel qt;"#
                     .nodes
                     .iter()
                     .filter_map(|nid| nodes.get(nid))
-                    .map(|n| Point { lat: n.lat, lng: n.lon })
+                    .map(|n| Point { lat: round5(n.lat), lng: round5(n.lon) })
                     .collect();
 
                 if seg.is_empty() {
@@ -328,7 +346,10 @@ out skel qt;"#
         if !current.is_empty() {
             segments.push(current);
         }
-        let waypoints = segments;
+        let waypoints: Vec<Vec<Point>> = segments
+            .into_iter()
+            .map(|seg| thin_segment(seg, 200))
+            .collect();
 
         routes.push(TransitRoute {
             id: uuid::Uuid::new_v4(),
@@ -341,5 +362,6 @@ out skel qt;"#
         });
     }
 
+    routes.truncate(150);
     Ok(routes)
 }

@@ -5252,6 +5252,7 @@ dependencies = [
  "clap",
  "dioxus",
  "dotenvy",
+ "serde_json",
  "tokio",
  "ui",
  "uuid",

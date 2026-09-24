@@ -7,31 +7,31 @@ use dioxus::prelude::*;
 mod views;
 
 use uuid::Uuid;
-use views::{CreateMap, GameView, HostSetup, LandingPage};
+use views::{
+    EditMapBoundary, EditMapConfirm, EditMapInfo, EditMapTransit, GameView, HostSetup,
+    LandingPage, NewMap,
+};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
     #[route("/")]
     LandingPage {},
-    // #[route("/join")]
-    // JoinGame {},
     #[route("/host")]
     HostSetup {},
+    // Map creation wizard — each step is its own URL
     #[route("/maps/new")]
-    CreateMap {},
+    NewMap {},
+    #[route("/maps/:id/edit")]
+    EditMapInfo { id: Uuid },
+    #[route("/maps/:id/edit/boundary")]
+    EditMapBoundary { id: Uuid },
+    #[route("/maps/:id/edit/transit")]
+    EditMapTransit { id: Uuid },
+    #[route("/maps/:id/edit/confirm")]
+    EditMapConfirm { id: Uuid },
     #[route("/game/:game_id")]
     GameView { game_id: Uuid },
-    // #[route("/game/:game_id/lobby")]
-    // Lobby { game_id: String },
-    // #[route("/game/:game_id/seeker")]
-    // SeekerView { game_id: String },
-    // #[route("/game/:game_id/hider")]
-    // HiderView { game_id: String },
-    // #[route("/game/:game_id/host")]
-    // HostView { game_id: String },
-    // #[route("/:..segments")]
-    // NotFound { segments: Vec<String> },
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -74,8 +74,6 @@ fn main() {
         let pool = api::db::create_pool(&args.database_url)
             .await
             .context("Failed to connect to database")?;
-
-        // let hub = api::ws::GameHub::new();
 
         let router = axum::Router::new()
             .serve_dioxus_application(dioxus::server::ServeConfig::new(), App)

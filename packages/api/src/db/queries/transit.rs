@@ -2,6 +2,20 @@ use serde_json::Value as JsonValue;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Delete all transit data for a map so it can be replaced.
+pub async fn delete_transit_for_map(pool: &PgPool, map_id: Uuid) -> Result<(), sqlx::Error> {
+    // transit_route_stops cascades from transit_routes; transit_stops deleted separately
+    sqlx::query("DELETE FROM transit_routes WHERE map_id = $1")
+        .bind(map_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM transit_stops WHERE map_id = $1")
+        .bind(map_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 use crate::types::{
     Point,
     transit::{TransitData, TransitRoute, TransitRouteType, TransitStop},

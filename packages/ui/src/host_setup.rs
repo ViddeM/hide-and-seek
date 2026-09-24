@@ -3,7 +3,7 @@ use api::{
         game::{CreateGameRequest, CreateGameResponse},
         maps::MapSummary,
     },
-    types::map_size::MapSize,
+    types::{map_size::MapSize, map_status::MapStatus},
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub fn HostSetupForm(
     on_created: EventHandler<CreateGameResponse>,
     on_create_map: EventHandler<()>,
+    on_continue_draft: EventHandler<Uuid>,
 ) -> Element {
     let mut maps = use_resource(api::endpoints::maps::list_maps);
 
@@ -84,18 +85,54 @@ pub fn HostSetupForm(
                         }
                     }
                     Some(Ok(map_list)) => {
-                        let all_empty = map_list.maps.is_empty();
+                        let complete: Vec<&MapSummary> = map_list.maps.iter()
+                            .filter(|m| m.status == MapStatus::Complete)
+                            .collect();
+                        let drafts: Vec<&MapSummary> = map_list.maps.iter()
+                            .filter(|m| m.status == MapStatus::Draft)
+                            .collect();
+
                         rsx! {
-                            if all_empty {
-                                p { class: "map-empty-hint", "No maps yet — use the button below to create your first one." }
+                            if complete.is_empty() {
+                                p { class: "map-empty-hint",
+                                    "No published maps yet — create and publish one below."
+                                }
+                            } else {
+                                ul { class: "map-list",
+                                    for map in complete.iter() {
+                                        MapOption {
+                                            key: "{map.id}",
+                                            map: (*map).clone(),
+                                            selected: *selected_map.read() == Some(map.id),
+                                            on_select: move |id| selected_map.set(Some(id)),
+                                        }
+                                    }
+                                }
                             }
-                            ul { class: "map-list",
-                                for map in map_list.maps.iter() {
-                                    MapOption {
-                                        key: "{map.id}",
-                                        map: map.clone(),
-                                        selected: *selected_map.read() == Some(map.id),
-                                        on_select: move |id| selected_map.set(Some(id)),
+
+                            if !drafts.is_empty() {
+                                div { class: "draft-maps-section",
+                                    p { class: "draft-maps-label", "Drafts (unfinished)" }
+                                    ul { class: "map-list map-list--drafts",
+                                        for draft in drafts.iter() {
+                                            {
+                                                let draft_id = draft.id;
+                                                let size_str = draft.size.to_string();
+                                                rsx! {
+                                                    li { class: "map-option map-option--draft",
+                                                        strong { "{draft.name}" }
+                                                        span { class: "map-option__size", " ({size_str})" }
+                                                        span { class: "map-option__badge", "Draft" }
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "btn btn--ghost btn--sm",
+                                                            onclick: move |_| on_continue_draft.call(draft_id),
+                                                            "Continue editing →"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
