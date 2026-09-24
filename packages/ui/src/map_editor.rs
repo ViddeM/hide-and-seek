@@ -30,7 +30,8 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>, #[props(default = true)] 
         "#;
         let _ = document::eval(init_js);
 
-        // Long-running task: receive click events from JS
+        // Long-running task: receive click and drag events from JS
+        // Messages: {t:"c",lat,lng} for click (add point), {t:"d",i,lat,lng} for drag (move point)
         spawn(async move {
             let mut eval = document::eval(
                 r#"
@@ -41,18 +42,35 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>, #[props(default = true)] 
                     }
                     if (!window._bndEditor) return;
                     window._bndEditor.on('click', function(e) {
-                        dioxus.send([e.latlng.lat, e.latlng.lng]);
+                        dioxus.send({t:'c', lat:e.latlng.lat, lng:e.latlng.lng});
                     });
+                    window._bndDragSend = function(i, lat, lng) {
+                        dioxus.send({t:'d', i:i, lat:lat, lng:lng});
+                    };
                 })()
             "#,
             );
             loop {
-                match eval.recv::<[f64; 2]>().await {
-                    Ok(pt) => {
-                        boundary.write().push(Point {
-                            lat: pt[0],
-                            lng: pt[1],
-                        });
+                match eval.recv::<serde_json::Value>().await {
+                    Ok(val) => {
+                        match val.get("t").and_then(|t| t.as_str()) {
+                            Some("c") => {
+                                let lat = val["lat"].as_f64().unwrap_or(0.0);
+                                let lng = val["lng"].as_f64().unwrap_or(0.0);
+                                boundary.write().push(Point { lat, lng });
+                            }
+                            Some("d") => {
+                                let i = val["i"].as_u64().unwrap_or(0) as usize;
+                                let lat = val["lat"].as_f64().unwrap_or(0.0);
+                                let lng = val["lng"].as_f64().unwrap_or(0.0);
+                                let mut b = boundary.write();
+                                if let Some(pt) = b.get_mut(i) {
+                                    pt.lat = lat;
+                                    pt.lng = lng;
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                     Err(_) => break,
                 }
@@ -75,10 +93,26 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>, #[props(default = true)] 
                 if (window._bndPoly) {{ try {{ m.removeLayer(window._bndPoly); }} catch(e) {{}} window._bndPoly = null; }}
                 var pts = {pts_json};
                 pts.forEach(function(p, i) {{
-                    var mk = L.circleMarker(p, {{
-                        radius: 8, fillColor: '#6c63ff', color: '#fff', weight: 2, fillOpacity: 0.9
-                    }}).addTo(m);
-                    mk.bindTooltip(String(i + 1), {{permanent: true, direction: 'center', className: 'bnd-label'}});
+                    var icon = L.divIcon({{
+                        html: '<div class="bnd-wp-icon">' + (i+1) + '</div>',
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12],
+                        className: ''
+                    }});
+                    var mk = L.marker([p.lat, p.lng], {{icon: icon, draggable: true}}).addTo(m);
+                    mk.on('click', function(e) {{ L.DomEvent.stopPropagation(e); }});
+                    mk.on('drag', function() {{
+                        if (window._bndPoly) {{
+                            var lls = (window._bndMarkers || []).map(function(m) {{ return m.getLatLng(); }});
+                            window._bndPoly.setLatLngs(lls);
+                        }}
+                    }});
+                    mk.on('dragend', (function(idx) {{
+                        return function(e) {{
+                            var ll = e.target.getLatLng();
+                            window._bndDragSend && window._bndDragSend(idx, ll.lat, ll.lng);
+                        }};
+                    }})(i));
                     window._bndMarkers.push(mk);
                 }});
                 if (pts.length >= 3) {{
