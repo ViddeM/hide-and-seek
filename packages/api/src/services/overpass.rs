@@ -9,7 +9,11 @@ use crate::types::{
     transit::{TransitRoute, TransitRouteType, TransitStop},
 };
 
-const OVERPASS_URL: &str = "https://overpass-api.de/api/interpreter";
+const OVERPASS_MIRRORS: &[&str] = &[
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+];
 
 fn route_types_for_size(size: MapSize) -> &'static str {
     match size {
@@ -145,17 +149,38 @@ out skel qt;"#
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(70))
+        .user_agent("hide-and-seek-game/1.0 (contact: vidar.magnusson@accenture.com)")
         .build()?;
 
-    let response = client
-        .post(OVERPASS_URL)
-        .body(format!("data={}", urlencode(&query)))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .send()
-        .await?
-        .error_for_status()?;
+    let body = format!("data={}", urlencode(&query));
+    let mut last_err = anyhow::anyhow!("no Overpass mirrors configured");
 
-    let overpass: OverpassResponse = response.json().await?;
+    let response_text = 'mirrors: {
+        for url in OVERPASS_MIRRORS {
+            match client
+                .post(*url)
+                .body(body.clone())
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.error_for_status() {
+                    Ok(ok) => break 'mirrors ok.text().await?,
+                    Err(e) => {
+                        tracing::warn!("Overpass mirror {url} returned error: {e}");
+                        last_err = e.into();
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Overpass mirror {url} unreachable: {e}");
+                    last_err = e.into();
+                }
+            }
+        }
+        return Err(last_err);
+    };
+
+    let overpass: OverpassResponse = serde_json::from_str(&response_text)?;
 
     let mut nodes: HashMap<i64, NodeElement> = HashMap::new();
     let mut ways: HashMap<i64, WayElement> = HashMap::new();
