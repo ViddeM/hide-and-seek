@@ -13,7 +13,10 @@ pub async fn insert_transit_data(
     routes: &[TransitRoute],
 ) -> Result<(), sqlx::Error> {
     for route in routes {
-        let shape: Vec<[f64; 2]> = route.waypoints.iter().map(|p| [p.lat, p.lng]).collect();
+        // Stored as array-of-segments: [[[lat,lng],...], ...]
+        let shape: Vec<Vec<[f64; 2]>> = route.waypoints.iter()
+            .map(|seg| seg.iter().map(|p| [p.lat, p.lng]).collect())
+            .collect();
         let shape_json = serde_json::to_value(&shape).unwrap_or(JsonValue::Array(vec![]));
 
         sqlx::query(
@@ -84,14 +87,19 @@ pub async fn get_transit_data(pool: &PgPool, map_id: Uuid) -> Result<TransitData
 
     let mut routes = Vec::new();
     for row in route_rows {
-        let waypoints: Vec<Point> = row
+        // shape is stored as array-of-segments: [[[lat,lng],...], ...]
+        let waypoints: Vec<Vec<Point>> = row
             .shape
             .as_array()
             .unwrap_or(&vec![])
             .iter()
-            .filter_map(|v| {
-                let arr = v.as_array()?;
-                Some(Point { lat: arr.first()?.as_f64()?, lng: arr.get(1)?.as_f64()? })
+            .map(|seg| {
+                seg.as_array().unwrap_or(&vec![]).iter()
+                    .filter_map(|v| {
+                        let arr = v.as_array()?;
+                        Some(Point { lat: arr.first()?.as_f64()?, lng: arr.get(1)?.as_f64()? })
+                    })
+                    .collect()
             })
             .collect();
 

@@ -192,13 +192,15 @@ pub fn MapView(
                 var routes={routes_json};
                 routes.forEach(function(route){{
                     var color=route.color||_transitColors[route.route_type]||'#888';
-                    if(route.waypoints&&route.waypoints.length>1){{
-                        var pts=route.waypoints.map(function(p){{return[p.lat,p.lng];}});
-                        L.polyline(pts,{{
-                            color:color,weight:3,opacity:0.8,
-                            interactive:false,pane:'transitPane'
-                        }}).bindTooltip(route.name).addTo(m);
-                    }}
+                    (route.waypoints||[]).forEach(function(seg){{
+                        if(seg.length>1){{
+                            var pts=seg.map(function(p){{return[p.lat,p.lng];}});
+                            L.polyline(pts,{{
+                                color:color,weight:3,opacity:0.8,
+                                interactive:false,pane:'transitPane'
+                            }}).bindTooltip(route.name).addTo(m);
+                        }}
+                    }});
                     (route.stops||[]).forEach(function(stop){{
                         L.circleMarker([stop.lat,stop.lng],{{
                             radius:5,color:'#fff',weight:1.5,

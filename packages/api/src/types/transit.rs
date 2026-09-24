@@ -34,7 +34,9 @@ pub struct TransitRoute {
     pub long_name: Option<String>,
     pub route_type: TransitRouteType,
     pub color: Option<String>,
-    pub waypoints: Vec<Point>,
+    /// Connected polyline segments; each inner Vec is a chain of points with no gaps.
+    /// Multiple segments arise when way members are genuinely disconnected.
+    pub waypoints: Vec<Vec<Point>>,
     pub stops: Vec<TransitStop>,
 }
 

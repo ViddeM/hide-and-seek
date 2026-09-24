@@ -272,31 +272,63 @@ out skel qt;"#
             continue;
         }
 
-        let mut waypoints: Vec<Point> = Vec::new();
+        // Reconstruct geometry: stitch way segments, reversing as needed, splitting on gaps.
+        // SNAP_THRESHOLD is in degrees-squared; ~0.001° ≈ 100 m, generous for ferry terminals.
+        const SNAP_THRESHOLD: f64 = 1e-6;
+        fn dist_sq(a: &Point, b: &Point) -> f64 {
+            (a.lat - b.lat).powi(2) + (a.lng - b.lng).powi(2)
+        }
+
+        let mut segments: Vec<Vec<Point>> = Vec::new();
+        let mut current: Vec<Point> = Vec::new();
+
         for way_id in &way_member_ids {
             if let Some(way) = ways.get(way_id) {
-                let seg: Vec<Point> = way
+                let mut seg: Vec<Point> = way
                     .nodes
                     .iter()
                     .filter_map(|nid| nodes.get(nid))
                     .map(|n| Point { lat: n.lat, lng: n.lon })
                     .collect();
 
-                if !waypoints.is_empty() && !seg.is_empty() {
-                    let last = waypoints.last().unwrap();
-                    let first = seg.first().unwrap();
-                    if (last.lat - first.lat).abs() < 1e-9
-                        && (last.lng - first.lng).abs() < 1e-9
-                    {
-                        waypoints.extend_from_slice(&seg[1..]);
+                if seg.is_empty() {
+                    continue;
+                }
+
+                if current.is_empty() {
+                    current = seg;
+                    continue;
+                }
+
+                let last = current.last().unwrap().clone();
+                let d_fwd = dist_sq(&last, seg.first().unwrap());
+                let d_rev = dist_sq(&last, seg.last().unwrap());
+
+                if d_fwd <= d_rev {
+                    if d_fwd < SNAP_THRESHOLD {
+                        current.extend_from_slice(&seg[1..]);
                     } else {
-                        waypoints.extend(seg);
+                        // True gap — start a new segment
+                        segments.push(std::mem::take(&mut current));
+                        current = seg;
                     }
                 } else {
-                    waypoints.extend(seg);
+                    // Way is stored in reverse — flip it
+                    seg.reverse();
+                    let d_after_flip = dist_sq(&last, seg.first().unwrap());
+                    if d_after_flip < SNAP_THRESHOLD {
+                        current.extend_from_slice(&seg[1..]);
+                    } else {
+                        segments.push(std::mem::take(&mut current));
+                        current = seg;
+                    }
                 }
             }
         }
+        if !current.is_empty() {
+            segments.push(current);
+        }
+        let waypoints = segments;
 
         routes.push(TransitRoute {
             id: uuid::Uuid::new_v4(),

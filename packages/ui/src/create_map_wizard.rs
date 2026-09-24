@@ -102,12 +102,14 @@ pub fn CreateMapWizard(on_created: EventHandler<MapSummary>) -> Element {
                 var routes={routes_json};
                 routes.forEach(function(r){{
                     var color=r.color||colors[r.route_type]||'#888';
-                    if(r.waypoints&&r.waypoints.length>1){{
-                        var pts=r.waypoints.map(function(p){{return[p.lat,p.lng];}});
-                        var line=L.polyline(pts,{{color:color,weight:3,opacity:0.85,interactive:false}}).addTo(m);
-                        line.bindTooltip(r.name);
-                        window._bndTransitLayers.push(line);
-                    }}
+                    (r.waypoints||[]).forEach(function(seg){{
+                        if(seg.length>1){{
+                            var pts=seg.map(function(p){{return[p.lat,p.lng];}});
+                            var line=L.polyline(pts,{{color:color,weight:3,opacity:0.85,interactive:false}}).addTo(m);
+                            line.bindTooltip(r.name);
+                            window._bndTransitLayers.push(line);
+                        }}
+                    }});
                     (r.stops||[]).forEach(function(s){{
                         var dot=L.circleMarker([s.lat,s.lng],{{radius:5,color:'#fff',weight:1.5,fillColor:color,fillOpacity:1}}).addTo(m);
                         dot.bindTooltip(s.name);
