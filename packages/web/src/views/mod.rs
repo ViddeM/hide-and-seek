@@ -1,4 +1,5 @@
 mod host_setup;
+mod create_map;
 // mod join;
 mod landing;
 // mod lobby;
@@ -11,6 +12,7 @@ mod game;
 // pub use hider::HiderView;
 // pub use host::HostView;
 pub use host_setup::HostSetup;
+pub use create_map::CreateMap;
 // pub use join::JoinGame;
 pub use landing::LandingPage;
 // pub use lobby::Lobby;

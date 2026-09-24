@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 mod views;
 
 use uuid::Uuid;
-use views::{GameView, HostSetup, LandingPage};
+use views::{CreateMap, GameView, HostSetup, LandingPage};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -18,6 +18,8 @@ enum Route {
     // JoinGame {},
     #[route("/host")]
     HostSetup {},
+    #[route("/maps/new")]
+    CreateMap {},
     #[route("/game/:game_id")]
     GameView { game_id: Uuid },
     // #[route("/game/:game_id/lobby")]

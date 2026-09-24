@@ -5,7 +5,7 @@ const LEAFLET_CSS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
 #[component]
-pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>) -> Element {
+pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>, #[props(default = true)] show_waypoints: bool) -> Element {
     // One-time init: create the Leaflet map and start the click-to-Dioxus bridge
     use_effect(move || {
         let init_js = r#"
@@ -104,30 +104,32 @@ pub fn BoundaryMapEditor(boundary: Signal<Vec<Point>>) -> Element {
                 class: "boundary-editor__map",
             }
 
-            if pts_snapshot.is_empty() {
-                p { class: "boundary-editor__hint", "Click on the map to place boundary waypoints. At least 3 required." }
-            } else {
-                p { class: "boundary-editor__hint",
-                    "{pts_snapshot.len()} waypoint(s) placed"
-                    if pts_snapshot.len() >= 3 { " — polygon ready" }
-                    else { " — need at least 3" }
-                }
-                ul { class: "waypoints-list",
-                    for (i, pt) in pts_snapshot.iter().enumerate() {
-                        {
-                            let lat = pt.lat;
-                            let lng = pt.lng;
-                            rsx! {
-                                li { class: "waypoint-item", key: "{i}",
-                                    span { class: "waypoint-item__num", "{i + 1}" }
-                                    span { class: "waypoint-item__coords",
-                                        "{lat:.4}, {lng:.4}"
-                                    }
-                                    button {
-                                        r#type: "button",
-                                        class: "waypoint-item__remove",
-                                        onclick: move |_| { boundary.write().remove(i); },
-                                        "×"
+            if show_waypoints {
+                if pts_snapshot.is_empty() {
+                    p { class: "boundary-editor__hint", "Click on the map to place boundary waypoints. At least 3 required." }
+                } else {
+                    p { class: "boundary-editor__hint",
+                        "{pts_snapshot.len()} waypoint(s) placed"
+                        if pts_snapshot.len() >= 3 { " — polygon ready" }
+                        else { " — need at least 3" }
+                    }
+                    ul { class: "waypoints-list",
+                        for (i, pt) in pts_snapshot.iter().enumerate() {
+                            {
+                                let lat = pt.lat;
+                                let lng = pt.lng;
+                                rsx! {
+                                    li { class: "waypoint-item", key: "{i}",
+                                        span { class: "waypoint-item__num", "{i + 1}" }
+                                        span { class: "waypoint-item__coords",
+                                            "{lat:.4}, {lng:.4}"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "waypoint-item__remove",
+                                            onclick: move |_| { boundary.write().remove(i); },
+                                            "×"
+                                        }
                                     }
                                 }
                             }

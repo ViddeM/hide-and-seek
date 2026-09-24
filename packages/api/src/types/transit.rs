@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use super::Point;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "server", derive(sqlx::Type))]
 #[cfg_attr(feature = "server", sqlx(type_name = "transit_route_type", rename_all = "snake_case"))]

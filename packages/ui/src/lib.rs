@@ -28,3 +28,6 @@ pub mod landing;
 
 pub mod game_view;
 pub use game_view::GameView;
+
+pub mod create_map_wizard;
+pub use create_map_wizard::CreateMapWizard;
