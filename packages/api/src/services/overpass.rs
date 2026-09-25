@@ -78,13 +78,13 @@ fn thin_segment(seg: Vec<Point>, max_pts: usize) -> Vec<Point> {
     out
 }
 
-/// Hard geometry limits: (max_routes, max_segments_per_route, max_pts_per_segment).
-/// These are firm upper bounds — no min-2 exceptions can blow past them.
-fn geometry_limits(size: MapSize) -> (usize, usize, usize) {
+/// Geometry limits per route: (max_segments_per_route, max_pts_per_segment).
+/// There is no route count cap — all matching routes are returned.
+fn geometry_limits(size: MapSize) -> (usize, usize) {
     match size {
-        MapSize::Small  => (150, 60, 30), // ≤ 270 k pts total
-        MapSize::Medium => (100, 40, 20), // ≤  80 k pts total
-        MapSize::Large  => (50,  15,  8), // ≤   6 k pts total
+        MapSize::Small  => (60, 30),
+        MapSize::Medium => (40, 20),
+        MapSize::Large  => (20, 12),
     }
 }
 
@@ -170,7 +170,7 @@ fn overpass_timeout_secs(size: MapSize) -> u64 {
     match size {
         MapSize::Small => 20,
         MapSize::Medium => 30,
-        MapSize::Large => 90,
+        MapSize::Large => 120,
     }
 }
 
@@ -348,7 +348,7 @@ out body;
         }
         if !current.is_empty() { segments.push(current); }
 
-        let (_, max_segs, max_pts) = geometry_limits(size);
+        let (max_segs, max_pts) = geometry_limits(size);
         segments.truncate(max_segs);
         let waypoints: Vec<Vec<Point>> = segments
             .into_iter()
@@ -366,7 +366,5 @@ out body;
         });
     }
 
-    let (max_routes, _, _) = geometry_limits(size);
-    routes.truncate(max_routes);
     Ok(routes)
 }
