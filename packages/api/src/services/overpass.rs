@@ -78,6 +78,16 @@ fn thin_segment(seg: Vec<Point>, max_pts: usize) -> Vec<Point> {
     out
 }
 
+/// Hard geometry limits: (max_routes, max_segments_per_route, max_pts_per_segment).
+/// These are firm upper bounds — no min-2 exceptions can blow past them.
+fn geometry_limits(size: MapSize) -> (usize, usize, usize) {
+    match size {
+        MapSize::Small  => (150, 60, 30), // ≤ 270 k pts total
+        MapSize::Medium => (100, 40, 20), // ≤  80 k pts total
+        MapSize::Large  => (50,  15,  8), // ≤   6 k pts total
+    }
+}
+
 fn build_poly_string(vertices: &[Point]) -> String {
     vertices
         .iter()
@@ -101,6 +111,8 @@ fn urlencode(s: &str) -> String {
 }
 
 // ── Overpass JSON response types ──────────────────────────────────────────────
+// The query uses `out geom` so way geometry is embedded inline in relation
+// members — no `>` expansion needed, which makes large areas feasible.
 
 #[derive(Debug, Deserialize)]
 struct OverpassResponse {
@@ -111,8 +123,9 @@ struct OverpassResponse {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Element {
     Node(NodeElement),
-    Way(WayElement),
     Relation(RelationElement),
+    // `out geom` never emits top-level Way elements; ignore any that appear
+    Way(serde_json::Value),
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,13 +135,6 @@ struct NodeElement {
     lon: f64,
     #[serde(default)]
     tags: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WayElement {
-    #[allow(dead_code)]
-    id: i64,
-    nodes: Vec<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,6 +152,26 @@ struct Member {
     member_ref: i64,
     #[serde(default)]
     role: String,
+    // Node members: lat/lon provided by `out geom`
+    lat: Option<f64>,
+    lon: Option<f64>,
+    // Way members: inline geometry provided by `out geom`
+    #[serde(default)]
+    geometry: Vec<GeomPoint>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeomPoint {
+    lat: f64,
+    lon: f64,
+}
+
+fn overpass_timeout_secs(size: MapSize) -> u64 {
+    match size {
+        MapSize::Small => 20,
+        MapSize::Medium => 30,
+        MapSize::Large => 90,
+    }
 }
 
 pub async fn fetch_transit(
@@ -154,19 +180,23 @@ pub async fn fetch_transit(
 ) -> Result<Vec<TransitRoute>, anyhow::Error> {
     let poly_str = build_poly_string(&bounds.vertices);
     let types = route_types_for_size(size);
+    let t = overpass_timeout_secs(size);
 
+    // `out geom` embeds way geometry inline in relation members — no `>` expansion.
+    // The stop sub-query fetches node body (tags + lat/lon) for name resolution.
     let query = format!(
-        r#"[out:json][timeout:20];
+        r#"[out:json][timeout:{t}];
 (
   relation["type"="route"]["route"~"{types}"](poly:"{poly_str}");
-);
+)->.routes;
+node(r.routes:"stop","stop_entry_only","stop_exit_only","platform","platform_entry_only","platform_exit_only");
 out body;
->;
-out body qt;"#
+.routes out geom;"#
     );
 
+    let http_timeout = std::time::Duration::from_secs(t + 5);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(25))
+        .timeout(http_timeout)
         .user_agent("hide-and-seek-game/1.0 (contact: vidar.magnusson@accenture.com)")
         .build()?;
 
@@ -185,12 +215,12 @@ out body qt;"#
                 Ok(resp) => match resp.error_for_status() {
                     Ok(ok) => break 'mirrors ok.text().await?,
                     Err(e) => {
-                        tracing::warn!("Overpass mirror {url} returned error: {e}");
+                        log::warn!("Overpass mirror {url} returned error: {e}");
                         last_err = e.into();
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("Overpass mirror {url} unreachable: {e}");
+                    log::warn!("Overpass mirror {url} unreachable: {e}");
                     last_err = e.into();
                 }
             }
@@ -200,155 +230,129 @@ out body qt;"#
 
     let overpass: OverpassResponse = serde_json::from_str(&response_text)?;
 
-    let mut nodes: HashMap<i64, NodeElement> = HashMap::new();
-    let mut ways: HashMap<i64, WayElement> = HashMap::new();
+    // Nodes come from the stop sub-query (with name tags and lat/lon).
+    // Relations carry inline geometry in member.geometry (way members) and
+    // member.lat/lon (node members, also provided by out geom).
+    let mut stop_nodes: HashMap<i64, NodeElement> = HashMap::new();
     let mut relations: Vec<RelationElement> = Vec::new();
 
     for element in overpass.elements {
         match element {
-            Element::Node(n) => {
-                nodes.insert(n.id, n);
-            }
-            Element::Way(w) => {
-                ways.insert(w.id, w);
-            }
+            Element::Node(n) => { stop_nodes.insert(n.id, n); }
             Element::Relation(r) => relations.push(r),
+            Element::Way(_) => {}
         }
     }
 
     let vertices = &bounds.vertices;
     let mut routes: Vec<TransitRoute> = Vec::new();
 
+    const SNAP_THRESHOLD: f64 = 1e-6;
+    fn dist_sq(a: &Point, b: &Point) -> f64 {
+        (a.lat - b.lat).powi(2) + (a.lng - b.lng).powi(2)
+    }
+
     let stop_roles = [
-        "stop",
-        "stop_entry_only",
-        "stop_exit_only",
-        "platform",
-        "platform_entry_only",
-        "platform_exit_only",
+        "stop", "stop_entry_only", "stop_exit_only",
+        "platform", "platform_entry_only", "platform_exit_only",
     ];
 
     for relation in relations {
         let route_tag = relation.tags.get("route").map(|s| s.as_str()).unwrap_or("");
-        let Some(route_type) = parse_route_type(route_tag) else {
-            continue;
-        };
+        let Some(route_type) = parse_route_type(route_tag) else { continue; };
 
         let name = relation
-            .tags
-            .get("ref")
-            .or_else(|| relation.tags.get("name"))
+            .tags.get("ref").or_else(|| relation.tags.get("name"))
             .cloned()
             .unwrap_or_else(|| format!("Route {}", relation.id));
 
         let long_name = relation
-            .tags
-            .get("name")
+            .tags.get("name")
             .filter(|n| *n != &name)
             .cloned();
 
         let color = relation
-            .tags
-            .get("colour")
-            .or_else(|| relation.tags.get("color"))
+            .tags.get("colour").or_else(|| relation.tags.get("color"))
             .cloned();
 
-        let mut stop_node_ids: Vec<i64> = Vec::new();
-        let mut way_member_ids: Vec<i64> = Vec::new();
-
-        for member in &relation.members {
-            if member.member_type == "node" && stop_roles.contains(&member.role.as_str()) {
-                stop_node_ids.push(member.member_ref);
-            } else if member.member_type == "way" {
-                way_member_ids.push(member.member_ref);
-            }
-        }
-
-        let in_boundary_stops: Vec<TransitStop> = stop_node_ids
-            .iter()
-            .filter_map(|id| {
-                let node = nodes.get(id)?;
-                let pt = Point { lat: node.lat, lng: node.lon };
-                if !point_in_polygon(&pt, vertices) {
-                    return None;
-                }
-                let stop_name = node
-                    .tags
-                    .get("name")
-                    .cloned()
-                    .unwrap_or_else(|| format!("Stop {}", node.id));
+        // Collect stops: node members with stop roles.
+        // `out geom` provides lat/lon on the member itself; names come from the
+        // stop sub-query which returned full body for those nodes.
+        let in_boundary_stops: Vec<TransitStop> = relation
+            .members.iter()
+            .filter(|m| m.member_type == "node" && stop_roles.contains(&m.role.as_str()))
+            .filter_map(|m| {
+                let (lat, lon) = match (m.lat, m.lon) {
+                    (Some(la), Some(lo)) => (la, lo),
+                    _ => {
+                        // Fall back to the stop sub-query result if member lat/lon absent
+                        let n = stop_nodes.get(&m.member_ref)?;
+                        (n.lat, n.lon)
+                    }
+                };
+                let pt = Point { lat, lng: lon };
+                if !point_in_polygon(&pt, vertices) { return None; }
+                // Prefer name from the stop sub-query (has tags); fall back to member inline tags.
+                let stop_name = stop_nodes.get(&m.member_ref)
+                    .and_then(|n| n.tags.get("name").cloned())
+                    .unwrap_or_else(|| format!("Stop {}", m.member_ref));
                 Some(TransitStop {
                     id: uuid::Uuid::new_v4(),
                     name: stop_name,
-                    lat: round5(node.lat),
-                    lng: round5(node.lon),
+                    lat: round5(lat),
+                    lng: round5(lon),
                 })
             })
             .collect();
 
-        if in_boundary_stops.len() < 2 {
-            continue;
-        }
+        if in_boundary_stops.len() < 2 { continue; }
 
-        // Reconstruct geometry: stitch way segments, reversing as needed, splitting on gaps.
-        // SNAP_THRESHOLD is in degrees-squared; ~0.001° ≈ 100 m, generous for ferry terminals.
-        const SNAP_THRESHOLD: f64 = 1e-6;
-        fn dist_sq(a: &Point, b: &Point) -> f64 {
-            (a.lat - b.lat).powi(2) + (a.lng - b.lng).powi(2)
-        }
-
+        // Build route geometry from inline way geometry (no node-lookup needed).
         let mut segments: Vec<Vec<Point>> = Vec::new();
         let mut current: Vec<Point> = Vec::new();
 
-        for way_id in &way_member_ids {
-            if let Some(way) = ways.get(way_id) {
-                let mut seg: Vec<Point> = way
-                    .nodes
-                    .iter()
-                    .filter_map(|nid| nodes.get(nid))
-                    .map(|n| Point { lat: round5(n.lat), lng: round5(n.lon) })
-                    .collect();
+        for member in relation.members.iter().filter(|m| m.member_type == "way") {
+            if member.geometry.is_empty() { continue; }
 
-                if seg.is_empty() {
-                    continue;
-                }
+            let mut seg: Vec<Point> = member
+                .geometry.iter()
+                .map(|g| Point { lat: round5(g.lat), lng: round5(g.lon) })
+                .collect();
 
-                if current.is_empty() {
-                    current = seg;
-                    continue;
-                }
+            if current.is_empty() {
+                current = seg;
+                continue;
+            }
 
-                let last = current.last().unwrap().clone();
-                let d_fwd = dist_sq(&last, seg.first().unwrap());
-                let d_rev = dist_sq(&last, seg.last().unwrap());
+            let last = current.last().unwrap().clone();
+            let d_fwd = dist_sq(&last, seg.first().unwrap());
+            let d_rev = dist_sq(&last, seg.last().unwrap());
 
-                if d_fwd <= d_rev {
-                    if d_fwd < SNAP_THRESHOLD {
-                        current.extend_from_slice(&seg[1..]);
-                    } else {
-                        // True gap — start a new segment
-                        segments.push(std::mem::take(&mut current));
-                        current = seg;
-                    }
+            if d_fwd <= d_rev {
+                if d_fwd < SNAP_THRESHOLD {
+                    current.extend_from_slice(&seg[1..]);
                 } else {
-                    // Way is stored in reverse — flip it
-                    seg.reverse();
-                    let d_after_flip = dist_sq(&last, seg.first().unwrap());
-                    if d_after_flip < SNAP_THRESHOLD {
-                        current.extend_from_slice(&seg[1..]);
-                    } else {
-                        segments.push(std::mem::take(&mut current));
-                        current = seg;
-                    }
+                    segments.push(std::mem::take(&mut current));
+                    current = seg;
+                }
+            } else {
+                seg.reverse();
+                let d_flip = dist_sq(&last, seg.first().unwrap());
+                if d_flip < SNAP_THRESHOLD {
+                    current.extend_from_slice(&seg[1..]);
+                } else {
+                    segments.push(std::mem::take(&mut current));
+                    current = seg;
                 }
             }
         }
-        if !current.is_empty() {
-            segments.push(current);
-        }
+        if !current.is_empty() { segments.push(current); }
+
+        let (_, max_segs, max_pts) = geometry_limits(size);
+        segments.truncate(max_segs);
         let waypoints: Vec<Vec<Point>> = segments
             .into_iter()
-            .map(|seg| thin_segment(seg, 200))
+            .map(|seg| thin_segment(seg, max_pts))
             .collect();
 
         routes.push(TransitRoute {
@@ -362,6 +366,7 @@ out body qt;"#
         });
     }
 
-    routes.truncate(150);
+    let (max_routes, _, _) = geometry_limits(size);
+    routes.truncate(max_routes);
     Ok(routes)
 }

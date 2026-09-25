@@ -8,8 +8,8 @@ use api::{
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-const LEAFLET_CSS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-const LEAFLET_JS: &str = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+const LEAFLET_CSS: Asset = asset!("/assets/leaflet.css");
+const LEAFLET_JS: Asset = asset!("/assets/leaflet.js");
 
 /// Converts a circle (lat/lng centre, radius in metres) to an N-point lat/lng ring.
 const CIRCLE_RING_FN: &str = r#"

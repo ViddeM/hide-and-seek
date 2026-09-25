@@ -169,6 +169,7 @@ pub struct PreviewTransitRequest {
 
 #[post("/api/transit/preview")]
 pub async fn preview_transit(req: PreviewTransitRequest) -> Result<TransitData> {
+    log::info!("Transit fetch starting for {:?} map", req.size);
     let routes = crate::services::overpass::fetch_transit(req.size, &req.bounds)
         .await
         .map_err(|e| {
@@ -177,5 +178,9 @@ pub async fn preview_transit(req: PreviewTransitRequest) -> Result<TransitData> 
                 "Could not fetch transit routes from OpenStreetMap. All mirrors are unavailable — please try again later.".to_string(),
             )
         })?;
+    let n_routes = routes.len();
+    let n_waypoints: usize = routes.iter().flat_map(|r| r.waypoints.iter()).map(|s| s.len()).sum();
+    let n_stops: usize = routes.iter().map(|r| r.stops.len()).sum();
+    log::info!("Transit fetch done: {n_routes} routes, {n_waypoints} total waypoints, {n_stops} total stops");
     Ok(TransitData { routes })
 }

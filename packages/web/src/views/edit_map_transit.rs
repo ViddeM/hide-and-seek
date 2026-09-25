@@ -95,37 +95,35 @@ pub fn EditMapTransit(id: Uuid) -> Element {
     });
 
     // Sync selected routes to the boundary-editor map preview.
-    // Split into two evals: one to set data on a JS global, one to run a static
-    // render function. This avoids building one huge concatenated string in WASM.
+    // We use eval.send() to pass route data from Rust to JS rather than
+    // format!-ing a potentially large JSON string into the eval source.
+    // The eval handle is kept alive in a signal so the JS async function
+    // never outlives its owner (avoids use-after-free in the WASM allocator).
+    let mut transit_eval: Signal<Option<document::Eval>> = use_signal(|| None);
     use_effect(move || {
         let routes = transit_routes.read().clone();
         let selected = route_selected.read().clone();
-        let selected_routes: Vec<&TransitRoute> = routes
-            .iter()
-            .zip(selected.iter())
-            .filter(|(_, s)| **s)
+        let selected_routes: Vec<TransitRoute> = routes
+            .into_iter()
+            .zip(selected.into_iter())
+            .filter(|(_, s)| *s)
             .map(|(r, _)| r)
             .collect();
 
-        let routes_json = serde_json::to_string(&selected_routes).unwrap_or_default();
+        // Drop the previous eval (if any) before creating a new one.
+        transit_eval.set(None);
 
-        // Step 1: push data into a JS global (small eval = just the JSON)
-        let set_data = format!("window._transitRouteData={routes_json};");
-        let _ = document::eval(&set_data);
-
-        // Step 2: run a static render function that reads from the global.
-        // Lines are drawn first, then deduplicated stop markers are added on top
-        // via markerPane so no line ever obscures a station.
-        let _ = document::eval(
-            r#"(function syncTransit(){
+        // The JS async function waits for one send() with the route array,
+        // then renders lines and deduplicated stop markers.
+        let eval = document::eval(r#"(async function(){
+            var routes = await dioxus.recv();
+            window._transitRouteData = routes;
+            (function syncTransit(){
                 var m=window._bndEditor;
                 if(!m){setTimeout(syncTransit,200);return;}
                 if(window._bndTransitLayers){window._bndTransitLayers.forEach(function(l){try{m.removeLayer(l);}catch(e){}});}
                 window._bndTransitLayers=[];
                 var colors={bus:'#1a73e8',tram:'#e8a81a',subway:'#dc3545',train:'#198754',ferry:'#0dcaf0',light_rail:'#6f42c1',monorail:'#fd7e14',trolleybus:'#20c997',funicular:'#d63384'};
-                var routes=window._transitRouteData||[];
-
-                // Draw route polylines first (overlayPane, below markers)
                 routes.forEach(function(r){
                     var color=r.color||colors[r.route_type]||'#888';
                     (r.waypoints||[]).forEach(function(seg){
@@ -137,38 +135,30 @@ pub fn EditMapTransit(id: Uuid) -> Element {
                         }
                     });
                 });
-
-                // Collect stops, deduplicate by name, average positions across platforms
                 var stopMap={};
                 routes.forEach(function(r){
                     var color=r.color||colors[r.route_type]||'#888';
                     (r.stops||[]).forEach(function(s){
                         var key=s.name.toLowerCase().trim();
-                        if(!stopMap[key]){
-                            stopMap[key]={latSum:s.lat,lngSum:s.lng,count:1,name:s.name,color:color};
-                        } else {
-                            stopMap[key].latSum+=s.lat;
-                            stopMap[key].lngSum+=s.lng;
-                            stopMap[key].count+=1;
-                        }
+                        if(!stopMap[key]){stopMap[key]={latSum:s.lat,lngSum:s.lng,count:1,name:s.name,color:color};}
+                        else{stopMap[key].latSum+=s.lat;stopMap[key].lngSum+=s.lng;stopMap[key].count+=1;}
                     });
                 });
-
-                // Draw deduplicated stops on markerPane (always above polylines)
                 Object.keys(stopMap).forEach(function(k){
                     var s=stopMap[k];
-                    var lat=s.latSum/s.count;
-                    var lng=s.lngSum/s.count;
-                    var dot=L.circleMarker([lat,lng],{
-                        pane:'markerPane',radius:5,
-                        color:'#fff',weight:1.5,
-                        fillColor:s.color,fillOpacity:1
-                    }).addTo(m);
+                    var lat=s.latSum/s.count; var lng=s.lngSum/s.count;
+                    var dot=L.circleMarker([lat,lng],{pane:'markerPane',radius:5,color:'#fff',weight:1.5,fillColor:s.color,fillOpacity:1}).addTo(m);
                     dot.bindTooltip(s.name,{direction:'top',offset:[0,-7],className:'transit-stop-label'});
                     window._bndTransitLayers.push(dot);
                 });
-            })();"#,
-        );
+            })();
+        })()"#);
+
+        // Send data as a JS object tree — no large JSON string built in WASM.
+        let _ = eval.send(serde_json::to_value(&selected_routes).unwrap_or_default());
+
+        // Keep handle alive; JS owns its lifetime via JSOwner until it completes.
+        transit_eval.set(Some(eval));
     });
 
     let fetch_transit_fn = move |_| {
